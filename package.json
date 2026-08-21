@@ -1,0 +1,53 @@
+{
+	"name": "pi-mtplx",
+	"version": "0.1.0",
+	"description": "Zero-config MTPLX integration for Pi coding agent",
+	"keywords": [
+		"pi-package",
+		"pi-agent",
+		"pi-coding-agent",
+		"mtplx",
+		"local-llm",
+		"local-inference"
+	],
+	"license": "MIT",
+	"type": "module",
+	"homepage": "https://github.com/KrossKinetic/pi-mtplx#readme",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/KrossKinetic/pi-mtplx.git"
+	},
+	"bugs": {
+		"url": "https://github.com/KrossKinetic/pi-mtplx/issues"
+	},
+	"engines": {
+		"node": ">=20"
+	},
+	"pi": {
+		"extensions": [
+			"./extensions/mtplx.ts",
+			"./extensions/mtplx-tkps-footer.ts"
+		]
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-coding-agent": "*",
+		"@earendil-works/pi-ai": "*"
+	},
+	"devDependencies": {
+		"@earendil-works/pi-ai": "0.84.2",
+		"@earendil-works/pi-coding-agent": "0.84.2",
+		"@types/node": "^22",
+		"tsx": "^4",
+		"typescript": "^5"
+	},
+	"files": [
+		"extensions",
+		"src",
+		"README.md",
+		"LICENSE"
+	],
+	"scripts": {
+		"typecheck": "tsc --noEmit",
+		"test": "tsx --test test/*.test.ts"
+	}
+}

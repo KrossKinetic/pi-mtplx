@@ -209,7 +209,7 @@ export async function manageModels(ctx: ExtensionContext): Promise<boolean> {
 		return `${mark} ${id} — ${ref}`;
 	});
 	choices.push("Cancel");
-	const picked = await ctx.ui.select("MTPLX models — ✓ registered in Pi · ✗ available in MTPLX — open /model after making changes", choices, undefined);
+	const picked = await ctx.ui.select("MTPLX models — ✓ registered in Pi · ✗ available in MTPLX — registering a new model needs a Pi restart (/quit → pi) to show up in /model", choices, undefined);
 	if (!picked || picked === "Cancel") return false;
 	const ref = picked.split(" — ").slice(1).join(" — ");
 	const modelId = modelIdFromRef(ref);
@@ -291,7 +291,7 @@ export async function manageModels(ctx: ExtensionContext): Promise<boolean> {
 	}
 	// 3) Also enable the model in settings.json.
 	enableModelInSettings(modelId);
-	ctx.ui.notify(`Registered ${modelId} → ${ref}. Open /model to activate it.`, "info");
+	ctx.ui.notify(`Registered ${modelId} → ${ref}. Restart Pi with /quit (then relaunch with \`pi\`), then open /model to activate it.`, "info");
 	return true;
 }
 /**

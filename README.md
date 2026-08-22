@@ -39,7 +39,7 @@ Run `/mtplx` to open an interactive menu:
 | **Models** | Register or unregister models — ✓ means registered (click to unregister), ✗ means available (click to register) |
 | **Uninstall** | Remove the `mtplx` provider from Pi's config |
 
-> **To activate a model** after registering or unregistering it, open **`/model`** (or `/scoped-models`). pi-mtplx writes Pi's config files immediately, but Pi loads them into memory on startup; opening either picker refreshes that in-memory list. No `/reload` needed.
+> **To activate a model** after registering or unregistering it, open **`/model`** (or `/scoped-models`). pi-mtplx writes Pi's config files immediately, but Pi loads them into memory on startup — so a **newly registered** MTPLX model only appears in `/model` after you restart Pi with **`/quit`** and relaunch it (`pi`). Unregistering/re-registering an existing model is picked up by opening `/model`, but a brand-new model id requires the restart.
 
 ## Configuration
 
@@ -55,7 +55,7 @@ Models are registered in `~/.pi/agent/mtplx-models.json`. Each entry maps a Pi m
 }
 ```
 
-Register new models via the `/mtplx` → **Models** menu, or add entries manually to this file; then open `/model` (or `/scoped-models`) to activate them.
+Register new models via the `/mtplx` → **Models** menu, or add entries manually to this file. To activate a **newly added** model, restart Pi with `/quit` and relaunch it (`pi`), then open `/model` (or `/scoped-models`) — Pi reads this file at startup, so a brand-new model id won't show up in `/model` otherwise.
 
 ### Fan mode
 

@@ -27,6 +27,7 @@ const execFileAsync = promisify(execFile);
 // the exact provider block that `mtplx start pi` creates.
 export const MTPLX_PROVIDER = "mtplx";
 const MODELS_FILE = join(homedir(), ".pi", "agent", "mtplx-models.json");
+const SETTINGS_FILE = join(homedir(), ".pi", "agent", "settings.json");
 
 const BUILTIN_MODELS: Record<string, { ref: string }> = {
 	"mtplx-qwen38-27b-optimized-quality": {
@@ -59,6 +60,49 @@ export function saveRegisteredModels(): void {
 	}
 }
 
+// --- enabledModels management (settings.json) ---
+
+function loadEnabledModels(): string[] {
+	try {
+		const parsed = JSON.parse(readFileSync(SETTINGS_FILE, "utf8")) as { enabledModels?: unknown };
+		return Array.isArray(parsed.enabledModels) ? (parsed.enabledModels as string[]) : [];
+	} catch {
+		return [];
+	}
+}
+
+export function enableModelInSettings(modelId: string): boolean {
+	try {
+		const catalog = JSON.parse(readFileSync(SETTINGS_FILE, "utf8")) as { enabledModels?: unknown[] };
+		const enabled = Array.isArray(catalog.enabledModels) ? catalog.enabledModels : [];
+		const entry = `mtplx/${modelId}`;
+		if (enabled.includes(entry)) return true;
+		enabled.push(entry);
+		catalog.enabledModels = enabled;
+		writeFileSync(SETTINGS_FILE, JSON.stringify(catalog, null, 2) + "\n");
+		return true;
+	} catch (error) {
+		console.error(`pi-mtplx could not enable ${modelId} in settings.json: ${error instanceof Error ? error.message : String(error)}`);
+		return false;
+	}
+}
+
+export function disableModelInSettings(modelId: string): boolean {
+	try {
+		const catalog = JSON.parse(readFileSync(SETTINGS_FILE, "utf8")) as { enabledModels?: unknown[] };
+		const enabled = Array.isArray(catalog.enabledModels) ? catalog.enabledModels : [];
+		const entry = `mtplx/${modelId}`;
+		const idx = enabled.indexOf(entry);
+		if (idx === -1) return true;
+		enabled.splice(idx, 1);
+		catalog.enabledModels = enabled;
+		writeFileSync(SETTINGS_FILE, JSON.stringify(catalog, null, 2) + "\n");
+		return true;
+	} catch (error) {
+		console.error(`pi-mtplx could not disable ${modelId} in settings.json: ${error instanceof Error ? error.message : String(error)}`);
+		return false;
+	}
+}
 type MtplxListedModel = { repo_id?: unknown; path?: unknown; name?: unknown };
 
 export async function listMtplxModels(): Promise<MtplxListedModel[]> {
@@ -158,19 +202,48 @@ export async function listModels(ctx: ExtensionContext): Promise<void> {
 		ctx.ui.notify(`MTPLX model mapping saved, but models.json update failed: ${error instanceof Error ? error.message : String(error)}`, "error");
 		return;
 	}
-	ctx.ui.notify(`Registered ${modelId} → ${ref}. Restart Pi, then switch to it with /model.`, "info");
+	// 3) Also enable the model in settings.json so it shows on first boot.
+	enableModelInSettings(modelId);
+	ctx.ui.notify(`Registered ${modelId} → ${ref}. Switch to it with /model.`, "info");
 }
 
 /**
- * Remove the `mtplx` provider from the user's models.json. Never touches any
- * other provider. Silently succeeds when the file or provider is absent.
+ * Remove a single registered model from the provider and from enabledModels.
+ */
+export function removeModel(modelId: string): boolean {
+	// 1) Remove from the mtplx provider in models.json
+	const modelsJsonPath = join(homedir(), ".pi", "agent", "models.json");
+	if (!existsSync(modelsJsonPath)) return false;
+	try {
+		const catalog = JSON.parse(readFileSync(modelsJsonPath, "utf8")) as { providers?: Record<string, unknown> };
+		const provider = (catalog.providers?.[MTPLX_PROVIDER] as { models?: unknown[] }) ?? {};
+		const models = Array.isArray(provider.models) ? provider.models : [];
+		const filtered = (models as { id?: string }[]).filter((m) => m.id !== modelId);
+		if (filtered.length === models.length) return false; // not found
+		(provider as { models?: unknown[] }).models = filtered;
+		writeFileSync(modelsJsonPath, JSON.stringify(catalog, null, 2) + "\n");
+	} catch (error) {
+		console.error(`pi-mtplx could not remove ${modelId} from models.json: ${error instanceof Error ? error.message : String(error)}`);
+		return false;
+	}
+	// 2) Also remove from enabledModels in settings.json
+	disableModelInSettings(modelId);
+	return true;
+}
+
+/**
+ * Remove the entire `mtplx` provider from models.json and clean enabledModels.
  */
 export function removePiMtplxProvider(): boolean {
 	const modelsJsonPath = join(homedir(), ".pi", "agent", "models.json");
 	if (!existsSync(modelsJsonPath)) return false;
 	try {
-		const catalog = JSON.parse(readFileSync(modelsJsonPath, "utf8")) as { providers?: Record<string, unknown> };
+		const catalog = JSON.parse(readFileSync(modelsJsonPath, "utf8")) as { providers?: Record<string, unknown>; enabledModels?: string[] };
 		if (!catalog.providers || !(MTPLX_PROVIDER in catalog.providers)) return false;
+		// Remove all mtplx models from enabledModels
+		if (catalog.enabledModels) {
+			catalog.enabledModels = catalog.enabledModels.filter((m: string) => !m.startsWith("mtplx/"));
+		}
 		delete catalog.providers[MTPLX_PROVIDER];
 		writeFileSync(modelsJsonPath, JSON.stringify(catalog, null, 2) + "\n");
 		return true;

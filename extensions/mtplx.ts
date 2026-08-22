@@ -8,7 +8,7 @@
  */
 import { acquire, release, stopServer } from "../src/mtplx-process.ts";
 import { getFanMode, health, setFanMode, setFanModeValue } from "../src/mtplx-client.ts";
-import { MTPLX_PROVIDER, listModels, removePiMtplxProvider } from "../src/model-discovery.ts";
+import { MTPLX_PROVIDER, listModels, removeModel, removePiMtplxProvider, MTPLX_MODELS } from "../src/model-discovery.ts";
 import { FAN_MODES, isMtplxModel, saveFanMode, type FanMode } from "../src/utils.ts";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
@@ -19,7 +19,7 @@ export default function mtplxAutostart(pi: ExtensionAPI): void {
 			const current = await health();
 			const status = current ? "on" : "off";
 			await ctx.ui.setStatus("mtplx", `MTPLX: ${status}`);
-			const topChoices = [`Toggle (${status})`, `Fan Curves (current: ${getFanMode()})`, `Models (register)`, "Uninstall (remove pi models.json entry)"];
+			const topChoices = [`Toggle (${status})`, `Fan Curves (current: ${getFanMode()})`, `Models (register)`, `Remove Model`, "Uninstall (remove provider)"];
 			const top = await ctx.ui.select("MTPLX", topChoices, undefined);
 			if (!top) return;
 			if (top.startsWith("Toggle")) {
@@ -50,15 +50,31 @@ export default function mtplxAutostart(pi: ExtensionAPI): void {
 			if (top.startsWith("Models")) {
 				await listModels(ctx);
 			}
+			if (top.startsWith("Remove Model")) {
+				const registered = Object.keys(MTPLX_MODELS);
+				if (registered.length === 0) {
+					ctx.ui.notify("No MTPLX models registered. Register one first via Models (register).", "warning");
+					return;
+				}
+				const choices = registered.map((id) => `${id} (registered)`);
+				choices.push("Cancel");
+				const picked = await ctx.ui.select("Remove a registered MTPLX model", choices, undefined);
+				if (!picked || picked === "Cancel") return;
+				if (removeModel(picked)) {
+					ctx.ui.notify(`Removed ${picked} from models.json and enabledModels. Run /reload.`, "info");
+				} else {
+					ctx.ui.notify(`${picked} not found in registered models.`, "warning");
+				}
+			}
 			if (top.startsWith("Uninstall")) {
 				const ok = await ctx.ui.confirm(
 					"pi-mtplx uninstall",
-					`Remove the ${MTPLX_PROVIDER} provider (and its models) from ~/.pi/agent/models.json? The model registry file (~/.pi/agent/mtplx-models.json) and installed MTPLX models are left in place.`,
+					`Remove the ${MTPLX_PROVIDER} provider (and all its models) from models.json and enabledModels? The model registry file (~/.pi/agent/mtplx-models.json) and installed MTPLX models are left in place.`,
 					undefined,
 				);
 				if (!ok) return;
 				if (removePiMtplxProvider()) {
-					ctx.ui.notify(`Removed ${MTPLX_PROVIDER} provider from models.json. Run /reload (or restart Pi), then remove the pi-mtplx package.`, "info");
+					ctx.ui.notify(`Removed ${MTPLX_PROVIDER} provider from models.json and enabledModels. Run /reload (or restart Pi), then remove the pi-mtplx package.`, "info");
 				} else {
 					ctx.ui.notify(`Nothing to remove — the ${MTPLX_PROVIDER} provider is not in models.json.`, "info");
 				}

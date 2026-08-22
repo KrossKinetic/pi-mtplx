@@ -1,6 +1,6 @@
 {
 	"name": "pi-mtplx",
-	"version": "0.1.4",
+	"version": "0.1.5",
 	"description": "Zero-config MTPLX integration for Pi coding agent",
 	"keywords": [
 		"pi-package",

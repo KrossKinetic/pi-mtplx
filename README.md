@@ -16,7 +16,7 @@ Restart Pi after installation.
 
 1. Install MTPLX (see its own docs).
 2. Download the model(s) you want, e.g. `mtplx install Youssofal/Qwen3.8-27B-MTPLX-Optimized-Quality`.
-3. Register a downloaded model with Pi via `/mtplx` → **Models** (or add it manually to `~/.pi/agent/mtplx-models.json` and run `/reload`).
+3. Register a downloaded model with Pi via `/mtplx` → **Models** (or add it manually to `~/.pi/agent/mtplx-models.json`), then open `/model` to activate it.
 
 If you pick an MTPLX model that isn't installed, the server won't start — Pi will warn you. Use `mtplx list` to see what you've downloaded.
 
@@ -39,6 +39,8 @@ Run `/mtplx` to open an interactive menu:
 | **Models** | Register or unregister models — ✓ means registered (click to unregister), ✗ means available (click to register) |
 | **Uninstall** | Remove the `mtplx` provider from Pi's config |
 
+> **To activate a model** after registering or unregistering it, open **`/model`** (or `/scoped-models`). pi-mtplx writes Pi's config files immediately, but Pi loads them into memory on startup; opening either picker refreshes that in-memory list. No `/reload` needed.
+
 ## Configuration
 
 ### Model registry
@@ -47,13 +49,13 @@ Models are registered in `~/.pi/agent/mtplx-models.json`. Each entry maps a Pi m
 
 ```json
 {
-  "mtplx-qwen38-27b-optimized-quality": {
+  "mtplx-qwen3.8-27b-mtplx-optimized-quality": {
     "ref": "Youssofal/Qwen3.8-27B-MTPLX-Optimized-Quality"
   }
 }
 ```
 
-Register new models via the `/mtplx` → **Models** menu, or add entries manually to this file (then run `/reload`).
+Register new models via the `/mtplx` → **Models** menu, or add entries manually to this file; then open `/model` (or `/scoped-models`) to activate them.
 
 ### Fan mode
 

@@ -189,7 +189,7 @@ function readModelProfile(model: MtplxListedModel | undefined): ModelProfile {
  * Toggle registration of MTPLX models — register unregistered models,
  * unregister registered ones. Shows ✓/✗ marks to indicate status.
  *
- * Returns true if a change was made (user should /reload).
+ * Returns true if a change was made (open /model to apply it).
  */
 export async function manageModels(ctx: ExtensionContext): Promise<boolean> {
 	const installed = await listMtplxModels();
@@ -209,7 +209,7 @@ export async function manageModels(ctx: ExtensionContext): Promise<boolean> {
 		return `${mark} ${id} — ${ref}`;
 	});
 	choices.push("Cancel");
-	const picked = await ctx.ui.select("MTPLX models — ✓ registered in Pi · ✗ available in MTPLX — run /reload after making changes", choices, undefined);
+	const picked = await ctx.ui.select("MTPLX models — ✓ registered in Pi · ✗ available in MTPLX — open /model after making changes", choices, undefined);
 	if (!picked || picked === "Cancel") return false;
 	const ref = picked.split(" — ").slice(1).join(" — ");
 	const modelId = modelIdFromRef(ref);
@@ -223,7 +223,7 @@ export async function manageModels(ctx: ExtensionContext): Promise<boolean> {
 			ctx.ui.notify(
 				wasActive
 					? `Unregistered ${modelId} — still active for this session; it will drop from /model once you switch away.`
-					: `Unregistered ${modelId}. Run /reload.`,
+					: `Unregistered ${modelId}. Open /model to apply.`,
 				"info",
 			);
 			return true;
@@ -261,7 +261,7 @@ export async function manageModels(ctx: ExtensionContext): Promise<boolean> {
 		}) as { models?: unknown[] };
 		const models = Array.isArray(provider.models) ? (provider.models as unknown[]) : [];
 		if (models.some((entry) => (entry as { id?: unknown }).id === modelId)) {
-			ctx.ui.notify(`${modelId} is already registered — run /reload, then switch with /model.`, "info");
+			ctx.ui.notify(`${modelId} is already registered — open /model to refresh, then switch.`, "info");
 			return false;
 		}
 		models.push({
@@ -291,7 +291,7 @@ export async function manageModels(ctx: ExtensionContext): Promise<boolean> {
 	}
 	// 3) Also enable the model in settings.json.
 	enableModelInSettings(modelId);
-	ctx.ui.notify(`Registered ${modelId} → ${ref}. Switch to it with /model.`, "info");
+	ctx.ui.notify(`Registered ${modelId} → ${ref}. Open /model to activate it.`, "info");
 	return true;
 }
 /**

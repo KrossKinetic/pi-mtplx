@@ -8,18 +8,18 @@
  */
 import { acquire, release, stopServer } from "../src/mtplx-process.ts";
 import { getFanMode, health, setFanMode, setFanModeValue } from "../src/mtplx-client.ts";
-import { MTPLX_PROVIDER, listModels, removeModel, removePiMtplxProvider, MTPLX_MODELS } from "../src/model-discovery.ts";
+import { MTPLX_PROVIDER, manageModels, removeModel, removePiMtplxProvider } from "../src/model-discovery.ts";
 import { FAN_MODES, isMtplxModel, saveFanMode, type FanMode } from "../src/utils.ts";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export default function mtplxAutostart(pi: ExtensionAPI): void {
 	pi.registerCommand("mtplx", {
-		description: "MTPLX — toggle the server, pick a fan curve, or register a model",
+		description: "MTPLX — toggle the server, pick a fan curve, manage models, or uninstall",
 		handler: async (_args, ctx) => {
 			const current = await health();
 			const status = current ? "on" : "off";
 			await ctx.ui.setStatus("mtplx", `MTPLX: ${status}`);
-			const topChoices = [`Toggle (${status})`, `Fan Curves (current: ${getFanMode()})`, `Models (register)`, `Remove Model`, "Uninstall (remove provider)"];
+			const topChoices = [`Toggle (${status})`, `Fan Curves (current: ${getFanMode()})`, "Models", "Uninstall (remove provider)"];
 			const top = await ctx.ui.select("MTPLX", topChoices, undefined);
 			if (!top) return;
 			if (top.startsWith("Toggle")) {
@@ -48,23 +48,7 @@ export default function mtplxAutostart(pi: ExtensionAPI): void {
 				ctx.ui.notify(`MTPLX fan mode set to ${getFanMode()}`, "info");
 			}
 			if (top.startsWith("Models")) {
-				await listModels(ctx);
-			}
-			if (top.startsWith("Remove Model")) {
-				const registered = Object.keys(MTPLX_MODELS);
-				if (registered.length === 0) {
-					ctx.ui.notify("No MTPLX models registered. Register one first via Models (register).", "warning");
-					return;
-				}
-				const choices = registered.map((id) => `${id} (registered)`);
-				choices.push("Cancel");
-				const picked = await ctx.ui.select("Remove a registered MTPLX model", choices, undefined);
-				if (!picked || picked === "Cancel") return;
-				if (removeModel(picked)) {
-					ctx.ui.notify(`Removed ${picked} from models.json and enabledModels. Run /reload.`, "info");
-				} else {
-					ctx.ui.notify(`${picked} not found in registered models.`, "warning");
-				}
+				await manageModels(ctx);
 			}
 			if (top.startsWith("Uninstall")) {
 				const ok = await ctx.ui.confirm(

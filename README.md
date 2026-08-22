@@ -10,11 +10,21 @@ pi install npm:pi-mtplx
 
 Restart Pi after installation.
 
+## Prerequisites
+
+**pi-mtplx ships no model.** It only wires Pi to MTPLX, the inference engine — which you must install separately, and whose model weights you must download yourself. The extension has nothing to run until you do:
+
+1. Install MTPLX (see its own docs).
+2. Download the model(s) you want, e.g. `mtplx install Youssofal/Qwen3.8-27B-MTPLX-Optimized-Quality`.
+3. Register a downloaded model with Pi via `/mtplx` → **Models** (or add it manually to `~/.pi/agent/mtplx-models.json` and run `/reload`).
+
+If you pick an MTPLX model that isn't installed, the server won't start — Pi will warn you. Use `mtplx list` to see what you've downloaded.
+
 ## What happens on first run
 
 Once installed, Pi automatically manages your MTPLX workflow:
 
-- **Model discovery** — A built-in model (`mtplx-qwen38-27b-optimized-quality`) is pre-registered. More are discoverable via `/mtplx`.
+- **Model discovery** — `/mtplx` → **Models** scans what you've downloaded (`mtplx list`) and registers any of them with Pi. No model is bundled or pre-hardcoded: each Pi model id and its capabilities (context window, vision, reasoning) are derived live from the installed artifact, so models beyond the MTPLX stock set work too.
 - **Auto-start** — The MTPLX server starts when you switch to an `mtplx` model and shuts down cleanly when Pi exits.
 - **Token speed** — A `⚡N.N tk/s` indicator appears in the footer showing the generation speed of the last assistant turn.
 
@@ -26,8 +36,7 @@ Run `/mtplx` to open an interactive menu:
 | -------- | ------------- |
 | **Toggle (on/off)** | Start or stop the MTPLX server |
 | **Fan Curves** | Set the thermal profile (`default`, `smart`, `max`) |
-| **Models (register)** | Scan installed MTPLX models and register one with Pi |
-| **Remove Model** | Unregister a model from Pi |
+| **Models** | Register or unregister models — ✓ means registered (click to unregister), ✗ means available (click to register) |
 | **Uninstall** | Remove the `mtplx` provider from Pi's config |
 
 ## Configuration

@@ -110,8 +110,6 @@ export async function startServer(modelId: string): Promise<void> {
 			configured.ref,
 			"--model-id",
 			modelId,
-			"--profile",
-			"sustained",
 			"--fan-mode",
 			getFanMode(),
 			"--host",

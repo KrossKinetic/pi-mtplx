@@ -36,6 +36,7 @@ Run `/mtplx` to open an interactive menu:
 | -------- | ------------- |
 | **Toggle (on/off)** | Start or stop the MTPLX server |
 | **Fan Curves** | Set the thermal profile (`default`, `smart`, `max`) |
+| **SSD Session Cache** | Enable or disable MTPLX's SSD-backed session cache for subsequent server starts (on by default) |
 | **Models** | Register or unregister models — ✓ means registered (click to unregister), ✗ means available (click to register) |
 | **Uninstall** | Remove the `mtplx` provider from Pi's config |
 

@@ -9,17 +9,24 @@
 import { acquire, release, stopServer } from "../src/mtplx-process.ts";
 import { getFanMode, health, setFanMode, setFanModeValue } from "../src/mtplx-client.ts";
 import { MTPLX_PROVIDER, manageModels, removeModel, removePiMtplxProvider } from "../src/model-discovery.ts";
-import { FAN_MODES, isMtplxModel, saveFanMode, type FanMode } from "../src/utils.ts";
+import { FAN_MODES, isMtplxModel, loadSsdSessionCache, saveFanMode, saveSsdSessionCache, type FanMode } from "../src/utils.ts";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export default function mtplxAutostart(pi: ExtensionAPI): void {
 	pi.registerCommand("mtplx", {
-		description: "MTPLX — toggle the server, pick a fan curve, manage models, or uninstall",
+		description: "MTPLX — toggle the server, configure fan and SSD cache, manage models, or uninstall",
 		handler: async (_args, ctx) => {
 			const current = await health();
 			const status = current ? "on" : "off";
 			await ctx.ui.setStatus("mtplx", `MTPLX: ${status}`);
-			const topChoices = [`Toggle (${status})`, `Fan Curves (current: ${getFanMode()})`, "Models", "Uninstall (remove provider)"];
+			const ssdSessionCache = loadSsdSessionCache();
+			const topChoices = [
+				`Toggle (${status})`,
+				`Fan Curves (current: ${getFanMode()})`,
+				`SSD Session Cache (current: ${ssdSessionCache ? "on" : "off"})`,
+				"Models",
+				"Uninstall (remove provider)",
+			];
 			const top = await ctx.ui.select("MTPLX", topChoices, undefined);
 			if (!top) return;
 			if (top.startsWith("Toggle")) {
@@ -46,6 +53,17 @@ export default function mtplxAutostart(pi: ExtensionAPI): void {
 					await setFanMode();
 				}
 				ctx.ui.notify(`MTPLX fan mode set to ${getFanMode()}`, "info");
+			}
+			if (top.startsWith("SSD Session Cache")) {
+				const choices = [
+					ssdSessionCache ? "Off" : "Off (current)",
+					ssdSessionCache ? "On (current)" : "On",
+				];
+				const picked = await ctx.ui.select("MTPLX — SSD session cache for future server starts", choices, undefined);
+				if (!picked) return;
+				const enabled = picked.startsWith("On");
+				saveSsdSessionCache(enabled);
+				ctx.ui.notify(`MTPLX SSD session cache will be ${enabled ? "on" : "off"} the next time the server starts.`, "info");
 			}
 			if (top.startsWith("Models")) {
 				await manageModels(ctx);

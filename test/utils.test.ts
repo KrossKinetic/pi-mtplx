@@ -4,7 +4,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { modelIdFromRef, displayNameFromId, slugFromId, isMtplxModel, FAN_MODES } from "../src/utils.ts";
+import { modelIdFromRef, displayNameFromId, slugFromId, isMtplxModel, FAN_MODES, DEFAULT_SSD_SESSION_CACHE } from "../src/utils.ts";
 
 test("modelIdFromRef derives the Pi id from an artifact ref", () => {
 	// The function uses the last path segment of the ref, so this mirrors the actual output.
@@ -35,4 +35,8 @@ test("isMtplxModel matches the mtplx provider only", () => {
 
 test("FAN_MODES matches the MTPLX CLI fan modes", () => {
 	assert.deepEqual([...FAN_MODES], ["default", "smart", "max"]);
+});
+
+test("SSD session cache defaults to on", () => {
+	assert.equal(DEFAULT_SSD_SESSION_CACHE, true);
 });

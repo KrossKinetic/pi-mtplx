@@ -21,7 +21,7 @@ import { promisify } from "node:util";
 import type { ChildProcess } from "node:child_process";
 import { getFanMode, health, setFanMode, type Health } from "./mtplx-client.ts";
 import { MTPLX_MODELS } from "./model-discovery.ts";
-import { HOST, PORT, READY_TIMEOUT_MS, POLL_MS, sleep, commandError, portIsOccupied } from "./utils.ts";
+import { HOST, PORT, READY_TIMEOUT_MS, POLL_MS, loadSsdSessionCache, sleep, commandError, portIsOccupied } from "./utils.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -118,9 +118,9 @@ export async function startServer(modelId: string): Promise<void> {
 			HOST,
 			"--port",
 			String(PORT),
-			// Keep the KV-cache SSD cold tier off (CLI default is `on`). Do not remove.
+			// Explicitly pass the user's persisted choice; this extension defaults it to on.
 			"--ssd-session-cache",
-			"off",
+			loadSsdSessionCache() ? "on" : "off",
 		],
 		{ detached: true, stdio: "ignore" },
 	);

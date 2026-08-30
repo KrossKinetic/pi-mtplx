@@ -13,6 +13,7 @@ export const POLL_MS = 500;
 
 export type FanMode = "default" | "smart" | "max";
 export const FAN_MODES: readonly FanMode[] = ["default", "smart", "max"];
+export const DEFAULT_SSD_SESSION_CACHE = true;
 
 // Fan mode ("fan curve") applied at autostart, live-updated from `/mtplx` while the
 // server runs. Persisted to disk so the choice survives Pi restarts: `fanMode` is a
@@ -38,6 +39,30 @@ export function saveFanMode(fanMode: FanMode): void {
 		writeFileSync(FANMODE_FILE, JSON.stringify({ fanMode }, null, 2) + "\n");
 	} catch (error) {
 		console.error(`MTPLX could not persist fan mode: ${error instanceof Error ? error.message : String(error)}`);
+	}
+}
+
+// SSD session caching is deliberately opt-in for this extension. Persist the
+// choice independently of the fan setting so a user can enable it without
+// altering their existing thermal preference.
+export const SSD_SESSION_CACHE_FILE = join(homedir(), ".pi", "agent", "mtplx-ssd-session-cache.json");
+
+export function loadSsdSessionCache(): boolean {
+	try {
+		const parsed = JSON.parse(readFileSync(SSD_SESSION_CACHE_FILE, "utf8")) as { enabled?: unknown };
+		if (typeof parsed.enabled === "boolean") return parsed.enabled;
+	} catch {
+		// missing or corrupt file → fall back to the default
+	}
+	return DEFAULT_SSD_SESSION_CACHE;
+}
+
+export function saveSsdSessionCache(enabled: boolean): void {
+	try {
+		mkdirSync(join(homedir(), ".pi", "agent"), { recursive: true });
+		writeFileSync(SSD_SESSION_CACHE_FILE, JSON.stringify({ enabled }, null, 2) + "\n");
+	} catch (error) {
+		console.error(`MTPLX could not persist SSD session-cache preference: ${error instanceof Error ? error.message : String(error)}`);
 	}
 }
 

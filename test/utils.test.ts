@@ -4,26 +4,16 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { modelIdFromRef, displayNameFromId, slugFromId, isMtplxModel, FAN_MODES, DEFAULT_SSD_SESSION_CACHE } from "../src/utils.ts";
+import { displayNameFromId, isMtplxModel, maskMtplxApiKey, mtplxApiKeyFromCatalog, resolveMtplxApiKey, FAN_MODES, DEFAULT_AUTO_SHUTDOWN, DEFAULT_MTPLX_API_KEY, DEFAULT_SSD_SESSION_CACHE } from "../src/utils.ts";
+import { servedModelIdFromDryRun } from "../src/model-discovery.ts";
 
-test("modelIdFromRef derives the Pi id from an artifact ref", () => {
-	// The function uses the last path segment of the ref, so this mirrors the actual output.
-	assert.equal(modelIdFromRef("Youssofal/Qwen3.8-27B-MTPLX-Optimized-Quality"), "mtplx-qwen3.8-27b-mtplx-optimized-quality");
-});
-
-test("modelIdFromRef handles refs without a slash", () => {
-	const id = modelIdFromRef("some-local-model");
-	assert.ok(id.startsWith("mtplx-"));
-	assert.equal(id, id.toLowerCase());
+test("servedModelIdFromDryRun uses MTPLX's canonical model id", () => {
+	assert.equal(servedModelIdFromDryRun({ model_id: "mtplx-qwen36-35b-a3b-optimized-balance" }), "mtplx-qwen36-35b-a3b-optimized-balance");
+	assert.throws(() => servedModelIdFromDryRun({}), /served model id/);
 });
 
 test("displayNameFromId title-cases the id", () => {
 	assert.equal(displayNameFromId("mtplx-qwen38-27b-optimized-quality"), "Qwen38 27b Optimized Quality");
-});
-
-test("slugFromId strips the mtplx- prefix and normalizes separators", () => {
-	assert.equal(slugFromId("mtplx-qwen38-27b-optimized-quality"), "qwen38-27b-optimized-quality");
-	assert.equal(slugFromId("mtplx-some--weird--id"), "some-weird-id");
 });
 
 test("isMtplxModel matches the mtplx provider only", () => {
@@ -39,4 +29,29 @@ test("FAN_MODES matches the MTPLX CLI fan modes", () => {
 
 test("SSD session cache defaults to on", () => {
 	assert.equal(DEFAULT_SSD_SESSION_CACHE, true);
+});
+
+test("auto-shutdown defaults to on", () => {
+	assert.equal(DEFAULT_AUTO_SHUTDOWN, true);
+});
+
+test("mtplxApiKeyFromCatalog reads the provider-level key", () => {
+	assert.equal(mtplxApiKeyFromCatalog({ providers: { mtplx: { apiKey: "  local-test-key  " } } }), "local-test-key");
+});
+
+test("mtplxApiKeyFromCatalog ignores missing or malformed keys", () => {
+	for (const catalog of [undefined, {}, { providers: {} }, { providers: { mtplx: {} } }, { providers: { mtplx: { apiKey: "  " } } }, { providers: { mtplx: { apiKey: 1 } } }]) {
+		assert.equal(mtplxApiKeyFromCatalog(catalog), undefined);
+	}
+});
+
+test("maskMtplxApiKey does not expose the configured key", () => {
+	assert.equal(maskMtplxApiKey(undefined), `default (${DEFAULT_MTPLX_API_KEY})`);
+	assert.equal(maskMtplxApiKey("abc"), "configured");
+	assert.equal(maskMtplxApiKey("local-test-key"), "••••-key");
+});
+
+test("resolveMtplxApiKey uses the configured key or the default", () => {
+	assert.equal(resolveMtplxApiKey("custom-key"), "custom-key");
+	assert.equal(resolveMtplxApiKey(undefined), DEFAULT_MTPLX_API_KEY);
 });

@@ -24,8 +24,8 @@ If you pick an MTPLX model that isn't installed, the server won't start — Pi w
 
 Once installed, Pi automatically manages your MTPLX workflow:
 
-- **Model discovery** — `/mtplx` → **Models** scans what you've downloaded (`mtplx list`) and registers any of them with Pi. No model is bundled or pre-hardcoded: each Pi model id and its capabilities (context window, vision, reasoning) are derived live from the installed artifact, so models beyond the MTPLX stock set work too.
-- **Auto-start** — The MTPLX server starts when you switch to an `mtplx` model and shuts down cleanly when Pi exits.
+- **Model discovery** — `/mtplx` → **Models** scans what you've downloaded (`mtplx list`) and registers any of them with Pi. Each Pi model ID comes from MTPLX's own `quickstart --dry-run` plan, while capabilities (context window, vision, reasoning) are read from the installed artifact. Models beyond the MTPLX stock set work too.
+- **Auto-start** — The MTPLX server starts when you switch to an `mtplx` model. Auto shutdown is on by default and can be changed in `/mtplx`.
 - **Token speed** — A `⚡N.N tk/s` indicator appears in the footer showing the generation speed of the last assistant turn.
 
 ## Commands
@@ -35,7 +35,9 @@ Run `/mtplx` to open an interactive menu:
 | Option | What it does |
 | -------- | ------------- |
 | **Toggle (on/off)** | Start or stop the MTPLX server |
+| **API Key** | View a masked identifier for, or replace, the API key Pi uses for the local MTPLX server |
 | **Fan Curves** | Set the thermal profile (`default`, `smart`, `max`) |
+| **Auto Shutdown** | Choose whether Pi stops MTPLX on `/quit` or a normal terminal-close shutdown (on by default) |
 | **SSD Session Cache** | Enable or disable MTPLX's SSD-backed session cache for subsequent server starts (on by default) |
 | **Models** | Register or unregister models — ✓ means registered (click to unregister), ✗ means available (click to register) |
 | **Uninstall** | Remove the `mtplx` provider from Pi's config |
@@ -46,17 +48,17 @@ Run `/mtplx` to open an interactive menu:
 
 ### Model registry
 
-Models are registered in `~/.pi/agent/mtplx-models.json`. Each entry maps a Pi model ID to an MTPLX artifact ref:
+Models are registered in `~/.pi/agent/mtplx-models.json`. Each entry maps MTPLX's canonical served model ID to an MTPLX artifact ref:
 
 ```json
 {
-  "mtplx-qwen3.8-27b-mtplx-optimized-quality": {
+  "mtplx-qwen38-27b-optimized-quality": {
     "ref": "Youssofal/Qwen3.8-27B-MTPLX-Optimized-Quality"
   }
 }
 ```
 
-Register new models via the `/mtplx` → **Models** menu, or add entries manually to this file. To activate a **newly added** model, restart Pi with `/quit` and relaunch it (`pi`), then open `/model` (or `/scoped-models`) — Pi reads this file at startup, so a brand-new model id won't show up in `/model` otherwise.
+Register new models via the `/mtplx` → **Models** menu; it asks MTPLX for the exact served ID. Opening this menu also migrates older ref-derived IDs to their canonical MTPLX names. Restart Pi after a migration or registration, then open `/model` (or `/scoped-models`) to activate the model.
 
 ### Fan mode
 
@@ -68,12 +70,22 @@ Controls the thermal profile of your MTPLX server. Saved to `~/.pi/agent/mtplx-f
 | `smart` | Default — adaptive thermal management |
 | `max` | Maximum fan, fastest inference |
 
+### Server authentication
+
+pi-mtplx always uses an API key. It uses `providers.mtplx.apiKey` from `~/.pi/agent/models.json` when configured; otherwise it uses the local default `mtplx-local`. The resolved key is passed to Pi-managed MTPLX startup and sent with health, fan-control, and inference requests. If Pi already has a stored MTPLX API-key credential, pi-mtplx synchronizes it with this key at startup and whenever `/mtplx` → **API Key** saves a change. Restart Pi after changing the key so its in-memory inference provider reloads the configuration. The menu only shows a masked suffix for custom keys, never the full secret.
+
+### Auto shutdown
+
+Auto shutdown is on by default. When enabled, pi-mtplx stops the managed MTPLX server when Pi exits via `/quit` or a normal terminal-close shutdown. Turn it off in `/mtplx` → **Auto Shutdown** to leave the loaded server running after Pi exits. It cannot handle abrupt termination such as `SIGKILL` or a power loss.
+
 ## Troubleshooting
 
 | Problem | Fix |
 | --------- | ----- |
 | **"MTPLX not started"** — Pi warns when you ask an MTPLX model to respond | Run `/mtplx` → **Toggle** to start the server |
 | **"No MTPLX models registered"** | Run `/mtplx` → **Models** to discover and register one |
+| **"MTPLX is already running ... but Pi requested ..."** | A manually started MTPLX server is serving a different, unmanaged model. Stop it in the MTPLX app, or find it with `lsof -nP -iTCP:8000 -sTCP:LISTEN` and run `kill -TERM <PID>`, then retry so Pi can start and manage the selected model. |
+| **"MTPLX rejected the API key"** | The running server requires a different key. Use `/mtplx` → **API Key** to enter its current key, then retry. |
 | **MTPLX startup timed out after 180s** | Run `mtplx status --deep` for MTPLX-side diagnostics (model validation, memory, thermal) |
 
 ## License

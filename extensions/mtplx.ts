@@ -7,22 +7,30 @@
  * agent_end and session_shutdown, plus the /mtplx command.
  */
 import { acquire, release, stopServer } from "../src/mtplx-process.ts";
-import { getFanMode, health, setFanMode, setFanModeValue } from "../src/mtplx-client.ts";
+import { authenticationFailureMessage, getFanMode, health, healthProbe, setFanMode, setFanModeValue } from "../src/mtplx-client.ts";
 import { MTPLX_PROVIDER, manageModels, removeModel, removePiMtplxProvider } from "../src/model-discovery.ts";
-import { FAN_MODES, isMtplxModel, loadSsdSessionCache, saveFanMode, saveSsdSessionCache, type FanMode } from "../src/utils.ts";
+import { FAN_MODES, isMtplxModel, loadAutoShutdown, loadMtplxApiKey, loadSsdSessionCache, maskMtplxApiKey, saveAutoShutdown, saveFanMode, saveMtplxApiKey, saveSsdSessionCache, syncMtplxStoredCredential, type FanMode } from "../src/utils.ts";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export default function mtplxAutostart(pi: ExtensionAPI): void {
+	// Pi's runtime may already have loaded auth.json for this process, but
+	// syncing here ensures its next launch uses the same key as models.json.
+	syncMtplxStoredCredential();
+
 	pi.registerCommand("mtplx", {
-		description: "MTPLX — toggle the server, configure fan and SSD cache, manage models, or uninstall",
+		description: "MTPLX — toggle the server, configure API key, fan, shutdown, and SSD cache, manage models, or uninstall",
 		handler: async (_args, ctx) => {
 			const current = await health();
 			const status = current ? "on" : "off";
 			await ctx.ui.setStatus("mtplx", `MTPLX: ${status}`);
 			const ssdSessionCache = loadSsdSessionCache();
+			const autoShutdown = loadAutoShutdown();
+			const apiKeyLabel = maskMtplxApiKey(loadMtplxApiKey());
 			const topChoices = [
 				`Toggle (${status})`,
+				`API Key (current: ${apiKeyLabel})`,
 				`Fan Curves (current: ${getFanMode()})`,
+				`Auto Shutdown (current: ${autoShutdown ? "on" : "off"})`,
 				`SSD Session Cache (current: ${ssdSessionCache ? "on" : "off"})`,
 				"Models",
 				"Uninstall (remove provider)",
@@ -41,6 +49,23 @@ export default function mtplxAutostart(pi: ExtensionAPI): void {
 				}
 				return;
 			}
+			if (top.startsWith("API Key")) {
+				const apiKey = await ctx.ui.input(`MTPLX API Key — current: ${apiKeyLabel}`, "Paste a custom key, or leave blank for the default (visible while typing)");
+				if (apiKey === undefined) return;
+				if (!saveMtplxApiKey(apiKey)) {
+					ctx.ui.notify("MTPLX API key was not updated. Check that models.json is valid.", "error");
+					return;
+				}
+				const probe = await healthProbe();
+				if (probe.health) {
+					ctx.ui.notify("MTPLX API key updated and verified against the running server. Restart Pi before inference requests use the new key.", "info");
+				} else if (probe.authenticationRejected) {
+					ctx.ui.notify(`MTPLX API key was saved, but verification failed: ${authenticationFailureMessage()} Restart Pi after correcting it.`, "error");
+				} else {
+					ctx.ui.notify("MTPLX API key updated. No running server was available to verify it. Restart Pi before inference requests use the new key.", "warning");
+				}
+				return;
+			}
 			if (top.startsWith("Fan Curves")) {
 				const choices = FAN_MODES.map((mode) => (mode === getFanMode() ? `${mode} (current)` : mode));
 				const picked = await ctx.ui.select("MTPLX — fan mode for autostart", choices, undefined);
@@ -53,6 +78,17 @@ export default function mtplxAutostart(pi: ExtensionAPI): void {
 					await setFanMode();
 				}
 				ctx.ui.notify(`MTPLX fan mode set to ${getFanMode()}`, "info");
+			}
+			if (top.startsWith("Auto Shutdown")) {
+				const choices = [
+					autoShutdown ? "Off" : "Off (current)",
+					autoShutdown ? "On (current)" : "On",
+				];
+				const picked = await ctx.ui.select("MTPLX — stop the server when Pi exits", choices, undefined);
+				if (!picked) return;
+				const enabled = picked.startsWith("On");
+				saveAutoShutdown(enabled);
+				ctx.ui.notify(`MTPLX will ${enabled ? "stop automatically" : "keep running"} when Pi exits.`, "info");
 			}
 			if (top.startsWith("SSD Session Cache")) {
 				const choices = [
@@ -98,11 +134,11 @@ export default function mtplxAutostart(pi: ExtensionAPI): void {
 	});
 
 	pi.on("session_shutdown", async (event) => {
-		if (event.reason !== "quit") return;
+		if (event.reason !== "quit" || !loadAutoShutdown()) return;
 		try {
 			await stopServer();
 		} catch (error) {
-			console.error(`MTPLX cleanup on quit failed: ${error instanceof Error ? error.message : String(error)}`);
+			console.error(`MTPLX auto-shutdown failed: ${error instanceof Error ? error.message : String(error)}`);
 		}
 	});
 }

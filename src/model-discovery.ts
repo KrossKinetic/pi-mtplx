@@ -1,20 +1,18 @@
 /**
  * MTPLX model registry: Pi model id → installed MTPLX artifact ref.
  *
- * The refs are the artifact identifiers reported by `mtplx models --json`;
- * `--model-id` makes /health and /v1/models report Pi's id.
+ * The refs are the artifact identifiers reported by `mtplx list --json`.
+ * MTPLX's `quickstart --dry-run --json` supplies the canonical served id used
+ * by Pi, /health, and /v1/models.
  *
  * The extension ships no model weights and hard-codes no model. The registry
  * holds only models registered through `/mtplx`, persisted to
- * ~/.pi/agent/mtplx-models.json; each Pi model id is derived live from the
- * artifact's ref (see modelIdFromRef) so models.json, enabledModels and this
- * registry always agree on the id.
+ * ~/.pi/agent/mtplx-models.json; models.json, enabledModels and this registry
+ * use the same MTPLX-supplied id.
  *
- * Pi's model catalog is the USER's own ~/.pi/agent/models.json — a provider
- * config that pre-existed this package (created by `mtplx start pi` / the
- * /mtplx UI). The canonical provider name is MTPLX's own `mtplx`
- * (PI_PROVIDER_ID in MTPLX's mtplx/pi.py); this extension reads and writes
- * only that provider entry and leaves every other provider untouched.
+ * Pi's model catalog lives in ~/.pi/agent/models.json. The canonical provider
+ * name is `mtplx`; this extension reads and writes only that provider entry
+ * and leaves every other provider untouched.
  */
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -22,12 +20,11 @@ import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { modelIdFromRef, displayNameFromId } from "./utils.ts";
+import { displayNameFromId } from "./utils.ts";
 
 const execFileAsync = promisify(execFile);
 
-// Matches MTPLX's own PI_PROVIDER_ID ("mtplx") so the extension operates on
-// the exact provider block that `mtplx start pi` creates.
+// Keep the provider name consistent across model registration and lifecycle handling.
 export const MTPLX_PROVIDER = "mtplx";
 const MODELS_FILE = join(homedir(), ".pi", "agent", "mtplx-models.json");
 const SETTINGS_FILE = join(homedir(), ".pi", "agent", "settings.json");
@@ -101,6 +98,9 @@ export function disableModelInSettings(modelId: string): boolean {
 	}
 }
 type MtplxListedModel = { repo_id?: unknown; path?: unknown; name?: unknown };
+type ResolvedMtplxModel = { model: MtplxListedModel; ref: string; id: string };
+
+const servedIdCache = new Map<string, string>();
 
 export async function listMtplxModels(): Promise<MtplxListedModel[]> {
 	try {
@@ -118,6 +118,28 @@ export function listedIdentity(model: MtplxListedModel): string {
 }
 
 /**
+ * MTPLX itself chooses the default served id. `mtplx list` reports artifact
+ * refs, not that id, so ask quickstart for its dry-run plan rather than trying
+ * to reproduce its naming rules in Pi.
+ */
+export async function servedModelId(ref: string): Promise<string> {
+	const cached = servedIdCache.get(ref);
+	if (cached) return cached;
+	const { stdout } = await execFileAsync("mtplx", ["quickstart", "--model", ref, "--dry-run", "--json"], { timeout: 30_000 });
+	const id = servedModelIdFromDryRun(JSON.parse(stdout) as unknown);
+	servedIdCache.set(ref, id);
+	return id;
+}
+
+/** Parse the model id from MTPLX's machine-readable quickstart plan. */
+export function servedModelIdFromDryRun(plan: unknown): string {
+	if (typeof plan !== "object" || plan === null || typeof (plan as { model_id?: unknown }).model_id !== "string" || !(plan as { model_id: string }).model_id) {
+		throw new Error("MTPLX did not return a served model id");
+	}
+	return (plan as { model_id: string }).model_id;
+}
+
+/**
  * Model ids currently present in the `mtplx` provider of Pi's catalog
  * (models.json). This is the source of truth for whether a model is actually
  * registered with Pi (and thus usable via /model) — independent of the registry,
@@ -131,6 +153,68 @@ function catalogModelIds(): string[] {
 		if (!provider || !Array.isArray(provider.models)) return [];
 		return provider.models.filter((m): m is { id: string } => typeof m.id === "string").map((m) => m.id);
 	} catch {
+		return [];
+	}
+}
+
+/**
+ * Replace legacy ref-derived ids with MTPLX's own served ids. This runs only
+ * from the explicit Models menu, where the resulting Pi restart is expected.
+ */
+function migrateRegisteredModelIds(models: readonly ResolvedMtplxModel[]): string[] {
+	const servedIds = new Map(models.map(({ ref, id }) => [ref, id]));
+	const changes = new Map<string, string>();
+	for (const [oldId, entry] of Object.entries(MTPLX_MODELS)) {
+		const newId = servedIds.get(entry.ref);
+		if (!newId || newId === oldId) continue;
+		const collision = MTPLX_MODELS[newId];
+		if (collision && collision.ref !== entry.ref) {
+			console.warn(`pi-mtplx: cannot migrate ${oldId} to ${newId}; that id is already assigned to a different artifact.`);
+			continue;
+		}
+		changes.set(oldId, newId);
+	}
+	if (changes.size === 0) return [];
+
+	try {
+		const modelsJsonPath = join(homedir(), ".pi", "agent", "models.json");
+		const catalog = JSON.parse(readFileSync(modelsJsonPath, "utf8")) as { providers?: Record<string, unknown> };
+		const provider = catalog.providers?.[MTPLX_PROVIDER] as { models?: Record<string, unknown>[] } | undefined;
+		if (provider && Array.isArray(provider.models)) {
+			const seen = new Set<string>();
+			provider.models = provider.models.flatMap((model) => {
+				const id = typeof model.id === "string" ? model.id : undefined;
+				const replacement = id ? changes.get(id) : undefined;
+				const nextId = replacement ?? id;
+				if (!nextId || seen.has(nextId)) return [];
+				seen.add(nextId);
+				return [{ ...model, id: nextId, ...(replacement ? { name: displayNameFromId(nextId) } : {}) }];
+			});
+		}
+		writeFileSync(modelsJsonPath, JSON.stringify(catalog, null, 2) + "\n");
+
+		if (existsSync(SETTINGS_FILE)) {
+			const settings = JSON.parse(readFileSync(SETTINGS_FILE, "utf8")) as { enabledModels?: unknown };
+			if (Array.isArray(settings.enabledModels)) {
+				settings.enabledModels = [...new Set(settings.enabledModels.map((entry) => {
+					if (typeof entry !== "string") return entry;
+					const id = entry.startsWith(`${MTPLX_PROVIDER}/`) ? entry.slice(MTPLX_PROVIDER.length + 1) : undefined;
+					return id && changes.has(id) ? `${MTPLX_PROVIDER}/${changes.get(id)}` : entry;
+				}))];
+				writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2) + "\n");
+			}
+		}
+
+		for (const [oldId, newId] of changes) {
+			const entry = MTPLX_MODELS[oldId];
+			if (!entry) continue;
+			MTPLX_MODELS[newId] = entry;
+			delete MTPLX_MODELS[oldId];
+		}
+		saveRegisteredModels();
+		return [...changes].map(([oldId, newId]) => `${oldId} → ${newId}`);
+	} catch (error) {
+		console.error(`pi-mtplx could not migrate MTPLX model ids: ${error instanceof Error ? error.message : String(error)}`);
 		return [];
 	}
 }
@@ -197,13 +281,23 @@ export async function manageModels(ctx: ExtensionContext): Promise<boolean> {
 		ctx.ui.notify("No MTPLX models found. Install one with `mtplx install`.", "warning");
 		return false;
 	}
+	let resolved: ResolvedMtplxModel[];
+	try {
+		resolved = [];
+		for (const model of installed) {
+			const ref = listedIdentity(model);
+			if (ref) resolved.push({ model, ref, id: await servedModelId(ref) });
+		}
+	} catch (error) {
+		ctx.ui.notify(`Could not read MTPLX's served model id: ${error instanceof Error ? error.message : String(error)}`, "error");
+		return false;
+	}
+	const migrated = migrateRegisteredModelIds(resolved);
+	if (migrated.length > 0) {
+		ctx.ui.notify(`Updated registered model IDs to MTPLX's canonical names. Restart Pi before selecting them.`, "info");
+	}
 	const catalog = new Set(catalogModelIds());
-	const choices = installed.map((model) => {
-		const ref = listedIdentity(model);
-		// Each artifact maps to exactly one Pi model id, derived live from its ref.
-		// No hard-coded ids — the same id is written to models.json, enabledModels and
-		// the registry so the three never drift apart.
-		const id = modelIdFromRef(ref);
+	const choices = resolved.map(({ ref, id }) => {
 		// ✓ means registered in Pi's catalog (models.json); ✗ means just installed in MTPLX.
 		const mark = catalog.has(id) ? "✓" : "✗";
 		return `${mark} ${id} — ${ref}`;
@@ -212,9 +306,10 @@ export async function manageModels(ctx: ExtensionContext): Promise<boolean> {
 	const picked = await ctx.ui.select("MTPLX models — ✓ registered in Pi · ✗ available in MTPLX — registering a new model needs a Pi restart (/quit → pi) to show up in /model", choices, undefined);
 	if (!picked || picked === "Cancel") return false;
 	const ref = picked.split(" — ").slice(1).join(" — ");
-	const modelId = modelIdFromRef(ref);
 	// The installed-model record for the chosen artifact (used to read its live metadata).
-	const chosen = installed.find((m) => listedIdentity(m) === ref);
+	const selected = resolved.find((entry) => entry.ref === ref);
+	if (!selected) return false;
+	const { model: chosen, id: modelId } = selected;
 
 	if (catalog.has(modelId)) {
 		// Unregister: remove from models.json, enabledModels, and the id→ref registry.

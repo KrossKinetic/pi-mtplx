@@ -12,16 +12,17 @@
  *     ids. A foreign service on the port is never touched, and a manually
  *     started MTPLX server (no matching --model-id fingerprint) is never
  *     killed — it is simply served from as-is.
- *   - Stop goes through `mtplx stop --host --port --json` (MTPLX's own
- *     graceful-stop mechanism: SIGTERM → grace → SIGKILL), which targets the
- *     server answering on that exact host:port, not arbitrary processes.
+ *   - A server launched by this Pi session is stopped through its own detached
+ *     process group. This avoids relying on a second `mtplx` CLI invocation
+ *     during shutdown. A positively identified server from an earlier Pi
+ *     session still uses MTPLX's host-and-port stop command.
  */
 import { spawn, execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { ChildProcess } from "node:child_process";
-import { getFanMode, health, setFanMode, type Health } from "./mtplx-client.ts";
+import { authenticationFailureMessage, getFanMode, health, healthProbe, setFanMode } from "./mtplx-client.ts";
 import { MTPLX_MODELS } from "./model-discovery.ts";
-import { HOST, PORT, READY_TIMEOUT_MS, POLL_MS, loadSsdSessionCache, sleep, commandError, portIsOccupied } from "./utils.ts";
+import { HOST, PORT, READY_TIMEOUT_MS, POLL_MS, loadResolvedMtplxApiKey, loadSsdSessionCache, sleep, commandError, portIsOccupied } from "./utils.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -47,9 +48,11 @@ export function startupError(cause: Error): Error {
  * a kill target.
  */
 export async function stopServer(): Promise<void> {
-	const current = await health();
+	const probe = await healthProbe();
+	const current = probe.health;
 	if (!current) {
 		if (await portIsOccupied()) {
+			if (probe.authenticationRejected) throw new Error(authenticationFailureMessage());
 			throw new Error(`MTPLX cannot use ${HOST}:${PORT}: another, non-MTPLX service is listening there.`);
 		}
 		// Nothing listening (or not MTPLX): nothing to stop. Drop any stale handle.
@@ -70,24 +73,85 @@ export async function stopServer(): Promise<void> {
 		return;
 	}
 
-	try {
-		await execFileAsync("mtplx", ["stop", "--host", HOST, "--port", String(PORT), "--json"], { timeout: 20_000 });
-	} catch (error) {
-		throw new Error(`MTPLX shutdown failed: ${commandError(error)}`);
+	let stopError: unknown;
+	const childPid = ownedChild?.pid;
+	let signalledOwnedProcess = false;
+	if (isOwnedByThisSession() && childPid) {
+		try {
+			// `detached: true` gives this child its own POSIX process group. Signal
+			// that group so a quickstart wrapper and its server are stopped together.
+			process.kill(-childPid, "SIGTERM");
+			signalledOwnedProcess = true;
+		} catch (error) {
+			// The child may have already exited while its server survived. In that
+			// case, fall through to MTPLX's host-and-port stop command below.
+			if (!(error && typeof error === "object" && "code" in error && error.code === "ESRCH")) {
+				stopError = error;
+			}
+		}
 	}
-	ownedChild = undefined;
+
+	if (!isOwnedByThisSession() && await signalMtplxListener()) {
+		signalledOwnedProcess = true;
+	}
+
+	if (!signalledOwnedProcess) {
+		try {
+			await execFileAsync("mtplx", ["stop", "--host", HOST, "--port", String(PORT), "--json"], { timeout: 20_000 });
+			stopError = undefined;
+		} catch (error) {
+			// Some MTPLX CLI failures occur after it has already signalled the server.
+			// Confirm the listener state before reporting shutdown as failed.
+			stopError = error;
+		}
+	}
 
 	const deadline = Date.now() + 20_000;
 	while (Date.now() < deadline) {
-		if (!(await health())) return;
+		if (!(await portIsOccupied())) {
+			ownedChild = undefined;
+			return;
+		}
 		await sleep(POLL_MS);
 	}
-	throw new Error(`MTPLX shutdown timed out; ${HOST}:${PORT} is still healthy.`);
+	if (stopError) throw new Error(`MTPLX shutdown failed: ${commandError(stopError)}`);
+	if (signalledOwnedProcess) {
+		throw new Error(`MTPLX shutdown timed out after signalling Pi's server process; ${HOST}:${PORT} is still occupied.`);
+	}
+	throw new Error(`MTPLX shutdown timed out; ${HOST}:${PORT} is still occupied.`);
 }
 
 /** Positive ownership fingerprint: /health model id belongs to this extension's registry. */
 function currentModelIsOurs(model: string): boolean {
 	return Object.keys(MTPLX_MODELS).includes(model);
+}
+
+/**
+ * Signal the process listening on the managed MTPLX port. This is used only
+ * after an authenticated health check and a pi-mtplx model fingerprint have
+ * proved the listener is one we are allowed to stop. It covers a server that
+ * a previous Pi session left running, which has no child handle in this one.
+ */
+async function signalMtplxListener(): Promise<boolean> {
+	try {
+		const { stdout } = await execFileAsync("lsof", ["-t", "-nP", `-iTCP:${PORT}`, "-sTCP:LISTEN"], { timeout: 5_000 });
+		const pids = stdout
+			.split(/\s+/)
+			.map(Number)
+			.filter((pid) => Number.isSafeInteger(pid) && pid > 0);
+		if (pids.length === 0) return false;
+		for (const pid of pids) process.kill(pid, "SIGTERM");
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+function unmanagedServerModelError(runningModel: string, requestedModel: string): Error {
+	return new Error(
+		`MTPLX is already running on ${HOST}:${PORT} with model ${JSON.stringify(runningModel)}, but Pi requested ${JSON.stringify(requestedModel)}. ` +
+		`Pi will not replace this server because it is not managed by pi-mtplx. Stop it from the MTPLX app, or identify its listener with \`lsof -nP -iTCP:${PORT} -sTCP:LISTEN\` and run \`kill -TERM <PID>\`; then retry so Pi can start and manage the requested model.`,
+	);
 }
 
 /**
@@ -101,25 +165,28 @@ export async function startServer(modelId: string): Promise<void> {
 		throw new Error(`MTPLX model ${JSON.stringify(modelId)} is not mapped to an installed MTPLX artifact. Update the pi-mtplx model registry after adding it to Pi.`);
 	}
 
+	const args = [
+		"quickstart",
+		"--model",
+		configured.ref,
+		"--model-id",
+		modelId,
+		"--fan-mode",
+		getFanMode(),
+		"--host",
+		HOST,
+		"--port",
+		String(PORT),
+		// Explicitly pass the user's persisted choice; this extension defaults it to on.
+		"--ssd-session-cache",
+		loadSsdSessionCache() ? "on" : "off",
+	];
+	args.push("--api-key", loadResolvedMtplxApiKey());
+
 	let exited: Error | undefined;
 	const child = spawn(
 		"mtplx",
-		[
-			"quickstart",
-			"--model",
-			configured.ref,
-			"--model-id",
-			modelId,
-			"--fan-mode",
-			getFanMode(),
-			"--host",
-			HOST,
-			"--port",
-			String(PORT),
-			// Explicitly pass the user's persisted choice; this extension defaults it to on.
-			"--ssd-session-cache",
-			loadSsdSessionCache() ? "on" : "off",
-		],
+		args,
 		{ detached: true, stdio: "ignore" },
 	);
 	ownedChild = child;
@@ -150,13 +217,20 @@ export async function startServer(modelId: string): Promise<void> {
  * models: stop the current (identified) server, then start the requested one.
  */
 export async function ensureServer(modelId: string): Promise<void> {
-	const current = await health();
+	const probe = await healthProbe();
+	const current = probe.health;
 	if (current?.model === modelId) {
 		if (current.fan_mode !== getFanMode()) await setFanMode();
 		return;
 	}
-	if (current) await stopServer();
+	if (current) {
+		if (!isOwnedByThisSession() && !currentModelIsOurs(current.model)) {
+			throw unmanagedServerModelError(current.model, modelId);
+		}
+		await stopServer();
+	}
 	else if (await portIsOccupied()) {
+		if (probe.authenticationRejected) throw new Error(authenticationFailureMessage());
 		throw new Error(`MTPLX cannot start because ${HOST}:${PORT} is occupied by a non-MTPLX service.`);
 	}
 	await startServer(modelId);

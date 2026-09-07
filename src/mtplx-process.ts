@@ -165,6 +165,13 @@ export async function startServer(modelId: string): Promise<void> {
 		throw new Error(`MTPLX model ${JSON.stringify(modelId)} is not mapped to an installed MTPLX artifact. Update the pi-mtplx model registry after adding it to Pi.`);
 	}
 
+	// Check if a server is already running and serving this model
+	const current = await health();
+	if (current?.model === modelId) {
+		if (current.fan_mode !== getFanMode()) await setFanMode();
+		return;
+	}
+
 	const args = [
 		"quickstart",
 		"--model",

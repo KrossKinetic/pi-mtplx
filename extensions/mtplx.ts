@@ -9,7 +9,7 @@
 import { acquire, release, stopServer } from "../src/mtplx-process.ts";
 import { authenticationFailureMessage, getFanMode, health, healthProbe, setFanMode, setFanModeValue } from "../src/mtplx-client.ts";
 import { MTPLX_PROVIDER, manageModels, removeModel, removePiMtplxProvider } from "../src/model-discovery.ts";
-import { FAN_MODES, isMtplxModel, loadAutoShutdown, loadAutoStart, loadMtplxApiKey, loadSsdSessionCache, maskMtplxApiKey, saveAutoShutdown, saveAutoStart, saveFanMode, saveMtplxApiKey, saveSsdSessionCache, syncMtplxStoredCredential, type FanMode } from "../src/utils.ts";
+import { FAN_MODES, isMtplxModel, loadAutoShutdown, loadAutoStart, loadMtplxApiKey, loadMtplxEndpoint, loadSsdSessionCache, maskMtplxApiKey, saveAutoShutdown, saveAutoStart, saveFanMode, saveMtplxApiKey, saveMtplxEndpoint, saveSsdSessionCache, syncMtplxStoredCredential, type FanMode } from "../src/utils.ts";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export default function mtplxAutostart(pi: ExtensionAPI): void {
@@ -27,9 +27,11 @@ export default function mtplxAutostart(pi: ExtensionAPI): void {
 			const autoShutdown = loadAutoShutdown();
 			const autoStart = loadAutoStart();
 			const apiKeyLabel = maskMtplxApiKey(loadMtplxApiKey());
+			const endpoint = loadMtplxEndpoint();
 			const topChoices = [
 				`Toggle (${status})`,
 				`API Key (current: ${apiKeyLabel})`,
+				`Endpoint (current: ${endpoint.baseUrl})`,
 				`Fan Curves (current: ${getFanMode()})`,
 				`Auto Shutdown (current: ${autoShutdown ? "on" : "off"})`,
 				`Auto Start (current: ${autoStart ? "on" : "off"})`,
@@ -41,14 +43,25 @@ export default function mtplxAutostart(pi: ExtensionAPI): void {
 			if (!top) return;
 			if (top.startsWith("Toggle")) {
 				if (current) {
-					await stopServer();
-					ctx.ui.notify("MTPLX server stopped", "info");
+					const stopped = await stopServer();
+					ctx.ui.notify(stopped ? "MTPLX server stopped" : "MTPLX is managed separately; pi-mtplx left it running.", stopped ? "info" : "warning");
 				} else if (ctx.model && isMtplxModel(ctx.model)) {
 					await acquire(ctx.model.id);
 					ctx.ui.notify(`MTPLX server started (${ctx.model.id})`, "info");
 				} else {
 					ctx.ui.notify(`MTPLX not started — switch to an MTPLX (${MTPLX_PROVIDER}) model (active: ${ctx.model?.provider}/${ctx.model?.id})`, "warning");
 				}
+				return;
+			}
+			if (top.startsWith("Endpoint")) {
+				const baseUrl = await ctx.ui.input("MTPLX endpoint", `Current: ${endpoint.baseUrl} — e.g. http://127.0.0.1:8001/v1`);
+				if (baseUrl === undefined) return;
+				if (!saveMtplxEndpoint(baseUrl)) {
+					ctx.ui.notify("MTPLX endpoint was not updated. Enter an http(s) URL.", "error");
+					return;
+				}
+				const probe = await healthProbe();
+				ctx.ui.notify(probe.health ? "MTPLX endpoint saved and verified. Restart Pi before inference uses it." : "MTPLX endpoint saved, but health verification failed. Check its host, port, and API key; then restart Pi.", probe.health ? "info" : "warning");
 				return;
 			}
 			if (top.startsWith("API Key")) {

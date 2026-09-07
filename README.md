@@ -34,8 +34,9 @@ Run `/mtplx` to open an interactive menu:
 
 | Option | What it does |
 | -------- | ------------- |
-| **Toggle (on/off)** | Start or stop the MTPLX server |
+| **Toggle (on/off)** | Start or stop an MTPLX server launched by this Pi session; separately managed servers are left running |
 | **API Key** | View a masked identifier for, or replace, the API key Pi uses for the local MTPLX server |
+| **Endpoint** | Set the OpenAI-compatible MTPLX base URL; useful for a separately started server |
 | **Fan Curves** | Set the thermal profile (`default`, `smart`, `max`) |
 | **Auto Shutdown** | Choose whether Pi stops MTPLX on `/quit` or a normal terminal-close shutdown (on by default) |
 | **SSD Session Cache** | Enable or disable MTPLX's SSD-backed session cache for subsequent server starts (on by default) |
@@ -74,9 +75,15 @@ Controls the thermal profile of your MTPLX server. Saved to `~/.pi/agent/mtplx-f
 
 pi-mtplx always uses an API key. It uses `providers.mtplx.apiKey` from `~/.pi/agent/models.json` when configured; otherwise it uses the local default `mtplx-local`. The resolved key is passed to Pi-managed MTPLX startup and sent with health, fan-control, and inference requests. If Pi already has a stored MTPLX API-key credential, pi-mtplx synchronizes it with this key at startup and whenever `/mtplx` → **API Key** saves a change. Restart Pi after changing the key so its in-memory inference provider reloads the configuration. The menu only shows a masked suffix for custom keys, never the full secret.
 
+### Standalone MTPLX
+
+To use an MTPLX server that you start outside Pi, set `/mtplx` → **Auto Start** to off, then set `/mtplx` → **Endpoint** to that server's OpenAI base URL (for example, `http://127.0.0.1:8001/v1`). Restart Pi after changing it. The endpoint, health checks, and fan controls all use `providers.mtplx.baseUrl`; its default is `http://127.0.0.1:8000/v1`. pi-mtplx never stops a server it did not launch, including on normal Pi shutdown.
+
+The served model ID must be the same ID selected in Pi. Start MTPLX with `--model-id <Pi model ID>` if its artifact's default identity differs. Use the same API key in both the MTPLX launch command and `/mtplx` → **API Key**.
+
 ### Auto shutdown
 
-Auto shutdown is on by default. When enabled, pi-mtplx stops the managed MTPLX server when Pi exits via `/quit` or a normal terminal-close shutdown. Turn it off in `/mtplx` → **Auto Shutdown** to leave the loaded server running after Pi exits. It cannot handle abrupt termination such as `SIGKILL` or a power loss.
+Auto shutdown is on by default. When enabled, pi-mtplx stops an MTPLX server it launched during the current Pi session when Pi exits via `/quit` or a normal terminal-close shutdown. It never stops a separately managed server. Turn it off in `/mtplx` → **Auto Shutdown** to leave the Pi-launched server running after Pi exits. It cannot handle abrupt termination such as `SIGKILL` or a power loss.
 
 ## Troubleshooting
 
@@ -86,6 +93,7 @@ Auto shutdown is on by default. When enabled, pi-mtplx stops the managed MTPLX s
 | **"No MTPLX models registered"** | Run `/mtplx` → **Models** to discover and register one |
 | **"MTPLX is already running ... but Pi requested ..."** | A manually started MTPLX server is serving a different, unmanaged model. Stop it in the MTPLX app, or find it with `lsof -nP -iTCP:8000 -sTCP:LISTEN` and run `kill -TERM <PID>`, then retry so Pi can start and manage the selected model. |
 | **"MTPLX rejected the API key"** | The running server requires a different key. Use `/mtplx` → **API Key** to enter its current key, then retry. |
+| **"Connection error"** with standalone MTPLX | Pi's configured endpoint has no listener. Set `/mtplx` → **Endpoint** to the standalone server's exact URL (including `/v1`), then restart Pi. |
 | **MTPLX startup timed out after 180s** | Run `mtplx status --deep` for MTPLX-side diagnostics (model validation, memory, thermal) |
 
 ## License

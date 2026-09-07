@@ -1,10 +1,10 @@
 /**
- * Minimal HTTP client for the locally-running MTPLX server (OpenAI-compatible
- * endpoint on 127.0.0.1:8000). Only touches endpoints that MTPLX exposes:
+ * Minimal HTTP client for the configured MTPLX OpenAI-compatible endpoint.
+ * Only touches endpoints that MTPLX exposes:
  *   GET  /health
  *   POST /v1/mtplx/thermal/fan_mode
  */
-import { HOST, PORT, type FanMode, loadFanMode, loadResolvedMtplxApiKey } from "./utils.ts";
+import { type FanMode, loadFanMode, loadMtplxEndpoint, loadResolvedMtplxApiKey } from "./utils.ts";
 
 export type Health = { ok: true; model: string; model_path?: string; fan_mode?: string };
 export type HealthProbe = { health: Health | undefined; authenticationRejected?: true };
@@ -38,7 +38,7 @@ export async function healthProbe(): Promise<HealthProbe> {
 	const timeout = setTimeout(() => controller.abort(), 1_500);
 	try {
 		const auth = authRequest();
-		const response = await fetch(`http://${HOST}:${PORT}/health`, {
+		const response = await fetch(`${loadMtplxEndpoint().origin}/health`, {
 			headers: auth.headers,
 			signal: controller.signal,
 		});
@@ -72,7 +72,7 @@ export async function setFanMode(): Promise<void> {
 	const timeout = setTimeout(() => controller.abort(), 10_000);
 	try {
 		const auth = authRequest();
-		const response = await fetch(`http://${HOST}:${PORT}/v1/mtplx/thermal/fan_mode`, {
+		const response = await fetch(`${loadMtplxEndpoint().origin}/v1/mtplx/thermal/fan_mode`, {
 			method: "POST",
 			headers: { "content-type": "application/json", ...auth.headers },
 			body: JSON.stringify({ mode: fanMode }),

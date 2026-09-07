@@ -171,6 +171,15 @@ export async function startServer(modelId: string): Promise<void> {
 		if (current.fan_mode !== getFanMode()) await setFanMode();
 		return;
 	}
+	// If a server is running but with a different model, don't try to replace it
+	// This allows reusing an existing MTPLX instance when autostart is disabled
+	if (current) {
+		console.warn(
+			`MTPLX server on ${HOST}:${PORT} is running with model ${JSON.stringify(current.model)}, not ${JSON.stringify(modelId)}. ` +
+			`Cannot start a new server. Use /mtplx → Toggle to stop the running server first.`,
+		);
+		throw new Error(`MTPLX server is already running with a different model. Stop it via /mtplx → Toggle first.`);
+	}
 
 	const args = [
 		"quickstart",

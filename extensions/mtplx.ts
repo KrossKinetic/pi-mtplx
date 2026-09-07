@@ -9,7 +9,7 @@
 import { acquire, release, stopServer } from "../src/mtplx-process.ts";
 import { authenticationFailureMessage, getFanMode, health, healthProbe, setFanMode, setFanModeValue } from "../src/mtplx-client.ts";
 import { MTPLX_PROVIDER, manageModels, removeModel, removePiMtplxProvider } from "../src/model-discovery.ts";
-import { FAN_MODES, isMtplxModel, loadAutoShutdown, loadMtplxApiKey, loadSsdSessionCache, maskMtplxApiKey, saveAutoShutdown, saveFanMode, saveMtplxApiKey, saveSsdSessionCache, syncMtplxStoredCredential, type FanMode } from "../src/utils.ts";
+import { FAN_MODES, isMtplxModel, loadAutoShutdown, loadAutoStart, loadMtplxApiKey, loadSsdSessionCache, maskMtplxApiKey, saveAutoShutdown, saveAutoStart, saveFanMode, saveMtplxApiKey, saveSsdSessionCache, syncMtplxStoredCredential, type FanMode } from "../src/utils.ts";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export default function mtplxAutostart(pi: ExtensionAPI): void {
@@ -25,12 +25,14 @@ export default function mtplxAutostart(pi: ExtensionAPI): void {
 			await ctx.ui.setStatus("mtplx", `MTPLX: ${status}`);
 			const ssdSessionCache = loadSsdSessionCache();
 			const autoShutdown = loadAutoShutdown();
+			const autoStart = loadAutoStart();
 			const apiKeyLabel = maskMtplxApiKey(loadMtplxApiKey());
 			const topChoices = [
 				`Toggle (${status})`,
 				`API Key (current: ${apiKeyLabel})`,
 				`Fan Curves (current: ${getFanMode()})`,
 				`Auto Shutdown (current: ${autoShutdown ? "on" : "off"})`,
+				`Auto Start (current: ${autoStart ? "on" : "off"})`,
 				`SSD Session Cache (current: ${ssdSessionCache ? "on" : "off"})`,
 				"Models",
 				"Uninstall (remove provider)",
@@ -90,6 +92,17 @@ export default function mtplxAutostart(pi: ExtensionAPI): void {
 				saveAutoShutdown(enabled);
 				ctx.ui.notify(`MTPLX will ${enabled ? "stop automatically" : "keep running"} when Pi exits.`, "info");
 			}
+			if (top.startsWith("Auto Start")) {
+				const choices = [
+					autoStart ? "Off" : "Off (current)",
+					autoStart ? "On (current)" : "On",
+				];
+				const picked = await ctx.ui.select("MTPLX — autostart MTPLX server when loading an MTPLX model", choices, undefined);
+				if (!picked) return;
+				const enabled = picked.startsWith("On");
+				saveAutoStart(enabled);
+				ctx.ui.notify(`MTPLX will ${enabled ? "autostart" : "not autostart"} when loading an MTPLX model.`, "info");
+			}
 			if (top.startsWith("SSD Session Cache")) {
 				const choices = [
 					ssdSessionCache ? "Off" : "Off (current)",
@@ -122,6 +135,7 @@ export default function mtplxAutostart(pi: ExtensionAPI): void {
 
 	pi.on("before_agent_start", async (_event, ctx) => {
 		if (!ctx.model || !isMtplxModel(ctx.model)) return;
+		if (!loadAutoStart()) return;
 		try {
 			await acquire(ctx.model.id);
 		} catch (error) {

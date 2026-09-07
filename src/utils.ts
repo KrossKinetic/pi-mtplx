@@ -17,6 +17,7 @@ export type FanMode = "default" | "smart" | "max";
 export const FAN_MODES: readonly FanMode[] = ["default", "smart", "max"];
 export const DEFAULT_SSD_SESSION_CACHE = true;
 export const DEFAULT_AUTO_SHUTDOWN = true;
+export const DEFAULT_AUTO_START = true;
 export const DEFAULT_MTPLX_API_KEY = "mtplx-local";
 
 // Fan mode ("fan curve") applied at autostart, live-updated from `/mtplx` while the
@@ -74,6 +75,26 @@ export function saveSsdSessionCache(enabled: boolean): void {
 // separate from the server's own settings so users can deliberately leave a
 // loaded model available after Pi exits.
 export const AUTO_SHUTDOWN_FILE = join(homedir(), ".pi", "agent", "mtplx-auto-shutdown.json");
+export const AUTO_START_FILE = join(homedir(), ".pi", "agent", "mtplx-auto-start.json");
+
+export function loadAutoStart(): boolean {
+	try {
+		const parsed = JSON.parse(readFileSync(AUTO_START_FILE, "utf8")) as { enabled?: unknown };
+		if (typeof parsed.enabled === "boolean") return parsed.enabled;
+	} catch {
+		// missing or corrupt file → fall back to the default
+	}
+	return DEFAULT_AUTO_START;
+}
+
+export function saveAutoStart(enabled: boolean): void {
+	try {
+		mkdirSync(join(homedir(), ".pi", "agent"), { recursive: true });
+		writeFileSync(AUTO_START_FILE, JSON.stringify({ enabled }, null, 2) + "\n");
+	} catch (error) {
+		console.error(`MTPLX could not persist auto-start preference: ${error instanceof Error ? error.message : String(error)}`);
+	}
+}
 
 export function loadAutoShutdown(): boolean {
 	try {

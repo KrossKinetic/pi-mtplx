@@ -18,7 +18,7 @@ Restart Pi after installation.
 2. Download the model(s) you want, e.g. `mtplx install Youssofal/Qwen3.8-27B-MTPLX-Optimized-Quality`.
 3. Register a downloaded model with Pi via `/mtplx` → **Models** (or add it manually to `~/.pi/agent/mtplx-models.json`), then open `/model` to activate it.
 
-If you pick an MTPLX model that isn't installed, the server won't start — Pi will warn you. Use `mtplx list` to see what you've downloaded.
+`/mtplx` → **Models** only scans models installed through the local MTPLX CLI. It never downloads model weights and does not discover models available only on a configured remote endpoint. If you pick an MTPLX model that isn't installed locally, Pi cannot auto-start it. Use `mtplx list` to see what you've downloaded.
 
 ## What happens on first run
 
@@ -42,7 +42,7 @@ Run `/mtplx` to open an interactive menu:
 | **Auto Shutdown Pi-Owned Server** | Choose whether Pi stops an MTPLX server it launched on `/quit` or a normal terminal-close shutdown (on by default); separately managed and remote servers are always left running |
 | **Auto Start** | Choose whether Pi starts or switches MTPLX when loading an MTPLX model (on by default) |
 | **SSD Session Cache** | Enable or disable MTPLX's SSD-backed session cache for subsequent server starts (on by default) |
-| **Models** | Register or unregister models — ✓ means registered (click to unregister), ✗ means available (click to register) |
+| **Models** | Register or unregister locally installed models — ✓ means registered (click to unregister), ✗ means available (click to register); it does not fetch or discover remote models |
 | **Uninstall** | Remove the `mtplx` provider from Pi's config |
 
 > **To activate a model** after registering or unregistering it, open **`/model`** (or `/scoped-models`). pi-mtplx writes Pi's config files immediately, but Pi loads them into memory on startup — so a **newly registered** MTPLX model only appears in `/model` after you restart Pi with **`/quit`** and relaunch it (`pi`). Unregistering/re-registering an existing model is picked up by opening `/model`, but a brand-new model id requires the restart.
@@ -81,7 +81,7 @@ pi-mtplx always uses an API key. It uses `providers.mtplx.apiKey` from `~/.pi/ag
 
 To use an MTPLX server that you start outside Pi, set `/mtplx` → **Auto Start** to off, then set `/mtplx` → **Endpoint** to that server's OpenAI base URL (for example, `http://127.0.0.1:8001/v1`). Restart Pi after changing it. The endpoint, health checks, and fan controls all use `providers.mtplx.baseUrl`; its default is `http://127.0.0.1:8000/v1`. pi-mtplx never stops a server it did not launch, including on normal Pi shutdown.
 
-The served model ID must be the same ID selected in Pi. Before every MTPLX request, pi-mtplx verifies this through `/health` and reports both IDs if they differ. A separately managed server is never switched; start it with `--model-id <Pi model ID>` if its artifact's default identity differs. Use the same API key in both the MTPLX launch command and `/mtplx` → **API Key**.
+The served model ID must be the same ID selected in Pi. Before every MTPLX request, pi-mtplx verifies this through `/health` and reports both IDs if they differ. A separately managed server is never switched; start it with `--model-id <Pi model ID>` if its artifact's default identity differs. `/mtplx` → **Models** cannot discover a remote-only model, so add its exact ID to Pi's `mtplx` provider configuration manually before selecting it. Use the same API key in both the MTPLX launch command and `/mtplx` → **API Key**.
 
 ### Auto start
 

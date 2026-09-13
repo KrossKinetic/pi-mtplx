@@ -38,7 +38,9 @@ export function mtplxEndpointFromBaseUrl(baseUrl: unknown): MtplxEndpoint {
 	} catch {
 		url = new URL(fallback);
 	}
-	const host = url.hostname;
+	// URL.hostname retains brackets around IPv6 literals ("[::1]"). The
+	// MTPLX CLI and node:net both expect the bare address, and ::1 is local.
+	const host = url.hostname.replace(/^\[|\]$/g, "");
 	const port = Number(url.port || (url.protocol === "https:" ? 443 : 80));
 	return {
 		baseUrl: url.toString().replace(/\/$/, ""),

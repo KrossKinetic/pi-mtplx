@@ -6,10 +6,10 @@
  * and shared helpers (src/utils.ts) into Pi via before_agent_start,
  * agent_end and session_shutdown, plus the /mtplx command.
  */
-import { acquire, release, stopServer, validateServer } from "../src/mtplx-process.ts";
+import { acquire, isOwnedByThisSession, release, stopServer, validateServer } from "../src/mtplx-process.ts";
 import { authenticationFailureMessage, getFanMode, health, healthProbe, setFanMode, setFanModeValue } from "../src/mtplx-client.ts";
 import { MTPLX_PROVIDER, manageModels, removeModel, removePiMtplxProvider } from "../src/model-discovery.ts";
-import { FAN_MODES, isMtplxModel, loadAutoShutdown, loadAutoStart, loadMtplxApiKey, loadMtplxEndpoint, loadSsdSessionCache, maskMtplxApiKey, saveAutoShutdown, saveAutoStart, saveFanMode, saveMtplxApiKey, saveMtplxEndpoint, saveSsdSessionCache, syncMtplxStoredCredential, type FanMode } from "../src/utils.ts";
+import { FAN_MODES, isMtplxModel, loadAutoShutdown, loadAutoStart, loadMtplxApiKey, loadMtplxEndpoint, loadSsdSessionCache, maskMtplxApiKey, mtplxEndpointFromBaseUrl, saveAutoShutdown, saveAutoStart, saveFanMode, saveMtplxApiKey, saveMtplxEndpoint, saveSsdSessionCache, syncMtplxStoredCredential, type FanMode } from "../src/utils.ts";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 function syncFanModeFromRunningServer(fanMode: string | undefined): { previous: FanMode; current: FanMode } | undefined {
@@ -80,6 +80,29 @@ export default function mtplxAutostart(pi: ExtensionAPI): void {
 			if (top.startsWith("Endpoint")) {
 				const baseUrl = await ctx.ui.input("MTPLX endpoint", `Current: ${endpoint.baseUrl} — e.g. http://127.0.0.1:8001/v1`);
 				if (baseUrl === undefined) return;
+				try {
+					const url = new URL(baseUrl.trim());
+					if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("unsupported protocol");
+				} catch {
+					ctx.ui.notify("MTPLX endpoint was not updated. Enter an http(s) URL.", "error");
+					return;
+				}
+				if (mtplxEndpointFromBaseUrl(baseUrl).baseUrl === endpoint.baseUrl) {
+					ctx.ui.notify("MTPLX endpoint is unchanged.", "info");
+					return;
+				}
+				if (isOwnedByThisSession()) {
+					try {
+						await stopServer();
+					} catch (error) {
+						ctx.ui.notify(
+							`MTPLX endpoint was not changed because Pi could not stop its running server: ${error instanceof Error ? error.message : String(error)}`,
+							"error",
+						);
+						return;
+					}
+					ctx.ui.notify("Stopped Pi-owned MTPLX server before changing the endpoint.", "info");
+				}
 				if (!saveMtplxEndpoint(baseUrl)) {
 					ctx.ui.notify("MTPLX endpoint was not updated. Enter an http(s) URL.", "error");
 					return;

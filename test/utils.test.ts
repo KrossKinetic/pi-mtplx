@@ -54,6 +54,13 @@ test("mtplxEndpointFromBaseUrl normalizes local and remote endpoints", () => {
 		port: 443,
 		isLoopback: false,
 	});
+	assert.deepEqual(mtplxEndpointFromBaseUrl("http://[::1]:8001/v1"), {
+		baseUrl: "http://[::1]:8001/v1",
+		origin: "http://[::1]:8001",
+		host: "::1",
+		port: 8001,
+		isLoopback: true,
+	});
 });
 
 test("mtplxApiKeyFromCatalog reads the provider-level key", () => {

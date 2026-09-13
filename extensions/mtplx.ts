@@ -18,10 +18,13 @@ export default function mtplxAutostart(pi: ExtensionAPI): void {
 	syncMtplxStoredCredential();
 
 	pi.registerCommand("mtplx", {
-		description: "MTPLX — toggle the server, configure API key, fan, shutdown, and SSD cache, manage models, or uninstall",
+		description: "MTPLX — view server status, configure its endpoint and lifecycle, manage models, or uninstall",
 		handler: async (_args, ctx) => {
 			const current = await health();
 			const status = current ? "on" : "off";
+			const server = current
+				? `Server (serving: ${current.model})`
+				: "Server (unavailable — check endpoint or API key)";
 			await ctx.ui.setStatus("mtplx", `MTPLX: ${status}`);
 			const ssdSessionCache = loadSsdSessionCache();
 			const autoShutdown = loadAutoShutdown();
@@ -29,6 +32,7 @@ export default function mtplxAutostart(pi: ExtensionAPI): void {
 			const apiKeyLabel = maskMtplxApiKey(loadMtplxApiKey());
 			const endpoint = loadMtplxEndpoint();
 			const topChoices = [
+				server,
 				`Toggle (${status})`,
 				`API Key (current: ${apiKeyLabel})`,
 				`Endpoint (current: ${endpoint.baseUrl})`,
@@ -41,6 +45,7 @@ export default function mtplxAutostart(pi: ExtensionAPI): void {
 			];
 			const top = await ctx.ui.select("MTPLX", topChoices, undefined);
 			if (!top) return;
+			if (top === server) return;
 			if (top.startsWith("Toggle")) {
 				if (current) {
 					const stopped = await stopServer();

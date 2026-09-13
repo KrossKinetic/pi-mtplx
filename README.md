@@ -25,7 +25,7 @@ If you pick an MTPLX model that isn't installed, the server won't start — Pi w
 Once installed, Pi automatically manages your MTPLX workflow:
 
 - **Model discovery** — `/mtplx` → **Models** scans what you've downloaded (`mtplx list`) and registers any of them with Pi. Each Pi model ID comes from MTPLX's own `quickstart --dry-run` plan, while capabilities (context window, vision, reasoning) are read from the installed artifact. Models beyond the MTPLX stock set work too.
-- **Auto-start** — The MTPLX server starts when you switch to an `mtplx` model. Auto shutdown is on by default and can be changed in `/mtplx`.
+- **Auto-start** — The MTPLX server starts when you switch to an `mtplx` model. Auto-start and auto-shutdown are on by default and can be changed in `/mtplx`.
 - **Token speed** — A `⚡N.N tk/s` indicator appears in the footer showing the generation speed of the last assistant turn.
 
 ## Commands
@@ -34,11 +34,13 @@ Run `/mtplx` to open an interactive menu:
 
 | Option | What it does |
 | -------- | ------------- |
+| **Server** | Read-only status showing the model currently served at the configured endpoint, or that the endpoint is unavailable |
 | **Toggle (on/off)** | Start or stop an MTPLX server launched by this Pi session; separately managed servers are left running |
 | **API Key** | View a masked identifier for, or replace, the API key Pi uses for the local MTPLX server |
 | **Endpoint** | Set the OpenAI-compatible MTPLX base URL; useful for a separately started server |
 | **Fan Curves** | Set the thermal profile (`default`, `smart`, `max`) |
 | **Auto Shutdown** | Choose whether Pi stops MTPLX on `/quit` or a normal terminal-close shutdown (on by default) |
+| **Auto Start** | Choose whether Pi starts or switches MTPLX when loading an MTPLX model (on by default) |
 | **SSD Session Cache** | Enable or disable MTPLX's SSD-backed session cache for subsequent server starts (on by default) |
 | **Models** | Register or unregister models — ✓ means registered (click to unregister), ✗ means available (click to register) |
 | **Uninstall** | Remove the `mtplx` provider from Pi's config |

@@ -4,7 +4,7 @@
  *   GET  /health
  *   POST /v1/mtplx/thermal/fan_mode
  */
-import { type FanMode, loadFanMode, loadMtplxEndpoint, loadResolvedMtplxApiKey } from "./utils.ts";
+import { type FanMode, type MtplxEndpoint, loadFanMode, loadMtplxEndpoint, loadResolvedMtplxApiKey } from "./utils.ts";
 
 export type Health = { ok: true; model: string; model_path?: string; fan_mode?: string };
 export type HealthProbe = { health: Health | undefined; authenticationRejected?: true };
@@ -33,12 +33,12 @@ export function authenticationFailureMessage(): string {
 	return "MTPLX rejected Pi's API key. Update it via /mtplx → API Key.";
 }
 
-export async function healthProbe(): Promise<HealthProbe> {
+export async function healthProbe(endpoint = loadMtplxEndpoint()): Promise<HealthProbe> {
 	const controller = new AbortController();
 	const timeout = setTimeout(() => controller.abort(), 1_500);
 	try {
 		const auth = authRequest();
-		const response = await fetch(`${loadMtplxEndpoint().origin}/health`, {
+		const response = await fetch(`${endpoint.origin}/health`, {
 			headers: auth.headers,
 			signal: controller.signal,
 		});
@@ -63,8 +63,8 @@ export async function healthProbe(): Promise<HealthProbe> {
 	}
 }
 
-export async function health(): Promise<Health | undefined> {
-	return (await healthProbe()).health;
+export async function health(endpoint?: MtplxEndpoint): Promise<Health | undefined> {
+	return (await healthProbe(endpoint)).health;
 }
 
 export async function setFanMode(): Promise<void> {

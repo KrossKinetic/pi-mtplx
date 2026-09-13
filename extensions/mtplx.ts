@@ -39,7 +39,7 @@ export default function mtplxAutostart(pi: ExtensionAPI): void {
 				`API Key (current: ${apiKeyLabel})`,
 				`Endpoint (current: ${endpoint.baseUrl})`,
 				`Fan Curves (current: ${getFanMode()})`,
-				`Auto Shutdown (current: ${autoShutdown ? "on" : "off"})`,
+				`Auto Shutdown Pi-Owned Server (current: ${autoShutdown ? "on" : "off"})`,
 				`Auto Start (current: ${autoStart ? "on" : "off"})`,
 				`SSD Session Cache (current: ${ssdSessionCache ? "on" : "off"})`,
 				"Models",
@@ -106,11 +106,11 @@ export default function mtplxAutostart(pi: ExtensionAPI): void {
 					autoShutdown ? "Off" : "Off (current)",
 					autoShutdown ? "On (current)" : "On",
 				];
-				const picked = await ctx.ui.select("MTPLX — stop the server when Pi exits", choices, undefined);
+				const picked = await ctx.ui.select("MTPLX — stop the Pi-owned server when Pi exits", choices, undefined);
 				if (!picked) return;
 				const enabled = picked.startsWith("On");
 				saveAutoShutdown(enabled);
-				ctx.ui.notify(`MTPLX will ${enabled ? "stop automatically" : "keep running"} when Pi exits.`, "info");
+				ctx.ui.notify(`Pi will ${enabled ? "stop its own MTPLX server" : "leave its own MTPLX server running"} when Pi exits.`, "info");
 			}
 			if (top.startsWith("Auto Start")) {
 				const choices = [

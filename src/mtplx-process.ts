@@ -193,9 +193,8 @@ export async function startServer(modelId: string): Promise<void> {
  * Confirm that the configured endpoint is healthy and serves `modelId`.
  * Unlike `ensureServer`, this never starts, stops, or switches a server.
  */
-export async function validateServer(modelId: string): Promise<ReadyServer> {
-	const endpoint = loadMtplxEndpoint();
-	const probe = await healthProbe();
+export async function validateServer(modelId: string, endpoint = loadMtplxEndpoint()): Promise<ReadyServer> {
+	const probe = await healthProbe(endpoint);
 	const current = probe.health;
 	if (current?.model === modelId) {
 		return { endpoint, model: current.model, alreadyRunning: true };
@@ -212,9 +211,8 @@ export async function validateServer(modelId: string): Promise<ReadyServer> {
  * always authoritative: Pi reuses a matching one and never replaces a
  * different model. Pi starts a server only when the endpoint is unavailable.
  */
-export async function ensureServer(modelId: string): Promise<ReadyServer> {
-	const endpoint = loadMtplxEndpoint();
-	const probe = await healthProbe();
+export async function ensureServer(modelId: string, endpoint = loadMtplxEndpoint()): Promise<ReadyServer> {
+	const probe = await healthProbe(endpoint);
 	const current = probe.health;
 	if (current) {
 		if (current.model !== modelId) throw modelMismatchError(current.model, modelId, endpoint);

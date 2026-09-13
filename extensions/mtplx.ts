@@ -7,7 +7,7 @@
  * agent_end and session_shutdown, plus the /mtplx command.
  */
 import { acquire, release, stopServer, validateServer } from "../src/mtplx-process.ts";
-import { authenticationFailureMessage, getFanMode, health, healthProbe, setFanModeValue } from "../src/mtplx-client.ts";
+import { authenticationFailureMessage, getFanMode, health, healthProbe, setFanMode, setFanModeValue } from "../src/mtplx-client.ts";
 import { MTPLX_PROVIDER, manageModels, removeModel, removePiMtplxProvider } from "../src/model-discovery.ts";
 import { FAN_MODES, isMtplxModel, loadAutoShutdown, loadAutoStart, loadMtplxApiKey, loadMtplxEndpoint, loadSsdSessionCache, maskMtplxApiKey, saveAutoShutdown, saveAutoStart, saveFanMode, saveMtplxApiKey, saveMtplxEndpoint, saveSsdSessionCache, syncMtplxStoredCredential, type FanMode } from "../src/utils.ts";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -113,9 +113,10 @@ export default function mtplxAutostart(pi: ExtensionAPI): void {
 				if (!(FAN_MODES as readonly string[]).includes(mode)) return;
 				setFanModeValue(mode);
 				saveFanMode(mode);
+				if (current) await setFanMode();
 				ctx.ui.notify(
 					current
-						? `MTPLX fan default saved as ${getFanMode()}. Pi did not change the already running server; this default applies the next time Pi starts MTPLX.`
+						? `MTPLX fan curve set to ${getFanMode()} and saved as Pi's default for future Pi-started servers.`
 						: `MTPLX fan default saved as ${getFanMode()}. It applies the next time Pi starts MTPLX.`,
 					"info",
 				);

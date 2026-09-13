@@ -81,11 +81,11 @@ pi-mtplx always uses an API key. It uses `providers.mtplx.apiKey` from `~/.pi/ag
 
 To use an MTPLX server that you start outside Pi, set `/mtplx` → **Auto Start** to off, then set `/mtplx` → **Endpoint** to that server's OpenAI base URL (for example, `http://127.0.0.1:8001/v1`). Restart Pi after changing it. The endpoint, health checks, and fan controls all use `providers.mtplx.baseUrl`; its default is `http://127.0.0.1:8000/v1`. pi-mtplx never stops a server it did not launch, including on normal Pi shutdown.
 
-The served model ID must be the same ID selected in Pi. Before every MTPLX request, pi-mtplx verifies this through `/health` and reports both IDs if they differ. Start MTPLX with `--model-id <Pi model ID>` if its artifact's default identity differs. Use the same API key in both the MTPLX launch command and `/mtplx` → **API Key**.
+The served model ID must be the same ID selected in Pi. Before every MTPLX request, pi-mtplx verifies this through `/health` and reports both IDs if they differ. A separately managed server is never switched; start it with `--model-id <Pi model ID>` if its artifact's default identity differs. Use the same API key in both the MTPLX launch command and `/mtplx` → **API Key**.
 
 ### Auto start
 
-Auto Start is on by default. Pi first checks the selected endpoint before starting anything. If a healthy MTPLX server is already there and serves the selected model, Pi uses it without replacing it. If it serves a different model, Pi blocks the request and tells you which model is running and which model Pi selected. Pi starts MTPLX only when no MTPLX server is available at a loopback endpoint. With Auto Start off, Pi performs the same health and model-match check but never starts a server; it instead tells you to start MTPLX at the configured endpoint.
+Auto Start is on by default. Pi first checks the selected endpoint before starting anything. If a healthy MTPLX server is already there and serves the selected model, Pi uses it without replacing it. If it serves a different model, Pi switches it only when that server was started by the current Pi session; separately managed and remote servers are left alone, and Pi blocks the request with both model IDs. Pi starts MTPLX only when no MTPLX server is available at a loopback endpoint. With Auto Start off, Pi performs the same health and model-match check but never starts or switches a server; it instead tells you to start MTPLX at the configured endpoint.
 
 ### Auto shutdown Pi-owned server
 

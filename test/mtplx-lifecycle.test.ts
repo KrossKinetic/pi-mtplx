@@ -84,7 +84,7 @@ test("an existing server's fan curve is reported without changing the server", a
 	}
 });
 
-test("a model mismatch is blocked with Auto Start on or off", async () => {
+test("a separately managed model mismatch is blocked with Auto Start on or off", async () => {
 	const mock = await startMockEndpoint({ status: 200, model: "model-b" });
 	try {
 		const mismatch = /serving "model-b", but Pi has "model-a" selected/;

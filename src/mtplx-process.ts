@@ -208,16 +208,21 @@ export async function validateServer(modelId: string, endpoint = loadMtplxEndpoi
 }
 
 /**
- * Ensure the configured endpoint serves `modelId`. A healthy MTPLX server is
- * always authoritative: Pi reuses a matching one and never replaces a
- * different model. Pi starts a server only when the endpoint is unavailable.
+ * Ensure the configured endpoint serves `modelId`. A healthy separately
+ * managed server is authoritative: Pi reuses a matching one and never
+ * replaces a different model. A server started by this Pi session can be
+ * stopped and switched to the selected model. Pi starts a server only when
+ * the endpoint is unavailable or after switching its own server.
  */
 export async function ensureServer(modelId: string, endpoint = loadMtplxEndpoint()): Promise<ReadyServer> {
 	const probe = await healthProbe(endpoint);
 	const current = probe.health;
 	if (current) {
-		if (current.model !== modelId) throw modelMismatchError(current.model, modelId, endpoint);
-		return { endpoint, model: current.model, fanMode: current.fan_mode, alreadyRunning: true };
+		if (current.model === modelId) {
+			return { endpoint, model: current.model, fanMode: current.fan_mode, alreadyRunning: true };
+		}
+		if (!isOwnedByThisSession()) throw modelMismatchError(current.model, modelId, endpoint);
+		await stopServer();
 	}
 	if (await portIsOccupied(endpoint)) {
 		if (probe.authenticationRejected) throw new Error(authenticationFailureMessage());

@@ -173,7 +173,9 @@ export default function mtplxAutostart(pi: ExtensionAPI): void {
 		},
 	});
 
-	pi.on("before_agent_start", async (_event, ctx) => {
+	// This must run in `input`, not `before_agent_start`: Pi reports errors
+	// from before_agent_start but still sends the prompt to the provider.
+	pi.on("input", async (_event, ctx) => {
 		if (!ctx.model || !isMtplxModel(ctx.model)) return;
 		const autoStart = loadAutoStart();
 		try {
@@ -197,8 +199,10 @@ export default function mtplxAutostart(pi: ExtensionAPI): void {
 			}
 		} catch (error) {
 			lastServerNotice = undefined;
-			throw new Error(`MTPLX request blocked: ${error instanceof Error ? error.message : String(error)}`);
+			ctx.ui.notify(`MTPLX request blocked: ${error instanceof Error ? error.message : String(error)}`, "error");
+			return { action: "handled" };
 		}
+		return { action: "continue" };
 	});
 
 	pi.on("agent_end", async (_event, ctx) => {

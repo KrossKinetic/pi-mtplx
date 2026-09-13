@@ -65,7 +65,7 @@ Register new models via the `/mtplx` → **Models** menu; it asks MTPLX for the 
 
 ### Fan mode
 
-Controls the thermal profile of your MTPLX server. Saved to `~/.pi/agent/mtplx-fanmode.json` and persists across restarts.
+Controls the thermal profile used when Pi starts an MTPLX server. Saved to `~/.pi/agent/mtplx-fanmode.json` and persists across restarts. Pi does not change the fan curve of a server that is already running—whether it is local, remote, or Pi-owned. Instead, when a running server reports a supported fan curve that differs from Pi's saved default, Pi leaves the server unchanged and adopts that curve as its new default for future Pi-started servers.
 
 | Mode | Behavior |
 | ------ | ---------- |

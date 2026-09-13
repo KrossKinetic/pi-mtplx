@@ -6,7 +6,7 @@ import { ensureServer, validateServer } from "../src/mtplx-process.ts";
 import { mtplxEndpointFromBaseUrl, type MtplxEndpoint } from "../src/utils.ts";
 
 type HealthResponse =
-	| { status: 200; model: string }
+	| { status: 200; model: string; fanMode?: string }
 	| { status: 401 };
 
 type MockEndpoint = {
@@ -27,7 +27,7 @@ async function startMockEndpoint(response: HealthResponse): Promise<MockEndpoint
 		reply.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({
 			ok: true,
 			model: response.model,
-			fan_mode: getFanMode(),
+			fan_mode: response.fanMode ?? getFanMode(),
 		}));
 	});
 	await listen(server);
@@ -60,13 +60,25 @@ test("a matching endpoint is accepted with Auto Start on or off", async () => {
 		assert.deepEqual(await ensureServer("model-a", mock.endpoint), {
 			endpoint: mock.endpoint,
 			model: "model-a",
+			fanMode: getFanMode(),
 			alreadyRunning: true,
 		});
 		assert.deepEqual(await validateServer("model-a", mock.endpoint), {
 			endpoint: mock.endpoint,
 			model: "model-a",
+			fanMode: getFanMode(),
 			alreadyRunning: true,
 		});
+	} finally {
+		await mock.close();
+	}
+});
+
+test("an existing server's fan curve is reported without changing the server", async () => {
+	const runningFanMode = getFanMode() === "max" ? "smart" : "max";
+	const mock = await startMockEndpoint({ status: 200, model: "model-a", fanMode: runningFanMode });
+	try {
+		assert.equal((await ensureServer("model-a", mock.endpoint)).fanMode, runningFanMode);
 	} finally {
 		await mock.close();
 	}

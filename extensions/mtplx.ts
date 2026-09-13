@@ -7,10 +7,20 @@
  * agent_end and session_shutdown, plus the /mtplx command.
  */
 import { acquire, release, stopServer, validateServer } from "../src/mtplx-process.ts";
-import { authenticationFailureMessage, getFanMode, health, healthProbe, setFanMode, setFanModeValue } from "../src/mtplx-client.ts";
+import { authenticationFailureMessage, getFanMode, health, healthProbe, setFanModeValue } from "../src/mtplx-client.ts";
 import { MTPLX_PROVIDER, manageModels, removeModel, removePiMtplxProvider } from "../src/model-discovery.ts";
 import { FAN_MODES, isMtplxModel, loadAutoShutdown, loadAutoStart, loadMtplxApiKey, loadMtplxEndpoint, loadSsdSessionCache, maskMtplxApiKey, saveAutoShutdown, saveAutoStart, saveFanMode, saveMtplxApiKey, saveMtplxEndpoint, saveSsdSessionCache, syncMtplxStoredCredential, type FanMode } from "../src/utils.ts";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+
+function syncFanModeFromRunningServer(fanMode: string | undefined): { previous: FanMode; current: FanMode } | undefined {
+	if (typeof fanMode !== "string" || !(FAN_MODES as readonly string[]).includes(fanMode)) return;
+	const current = fanMode as FanMode;
+	const previous = getFanMode();
+	if (current === previous) return;
+	setFanModeValue(current);
+	saveFanMode(current);
+	return { previous, current };
+}
 
 export default function mtplxAutostart(pi: ExtensionAPI): void {
 	let lastServerNotice: string | undefined;
@@ -24,10 +34,17 @@ export default function mtplxAutostart(pi: ExtensionAPI): void {
 		handler: async (_args, ctx) => {
 			const current = await health();
 			const status = current ? "on" : "off";
+			const fanSync = current ? syncFanModeFromRunningServer(current.fan_mode) : undefined;
 			const server = current
 				? `Server (serving: ${current.model})`
 				: "Server (unavailable — check endpoint or API key)";
 			await ctx.ui.setStatus("mtplx", `MTPLX: ${status}`);
+			if (fanSync) {
+				ctx.ui.notify(
+					`MTPLX was already running with fan curve ${fanSync.current}, while Pi's saved default was ${fanSync.previous}. Pi left the server unchanged and updated its saved default to ${fanSync.current}.`,
+					"info",
+				);
+			}
 			const ssdSessionCache = loadSsdSessionCache();
 			const autoShutdown = loadAutoShutdown();
 			const autoStart = loadAutoStart();
@@ -96,10 +113,12 @@ export default function mtplxAutostart(pi: ExtensionAPI): void {
 				if (!(FAN_MODES as readonly string[]).includes(mode)) return;
 				setFanModeValue(mode);
 				saveFanMode(mode);
-				if (current) {
-					await setFanMode();
-				}
-				ctx.ui.notify(`MTPLX fan mode set to ${getFanMode()}`, "info");
+				ctx.ui.notify(
+					current
+						? `MTPLX fan default saved as ${getFanMode()}. Pi did not change the already running server; this default applies the next time Pi starts MTPLX.`
+						: `MTPLX fan default saved as ${getFanMode()}. It applies the next time Pi starts MTPLX.`,
+					"info",
+				);
 			}
 			if (top.startsWith("Auto Shutdown")) {
 				const choices = [
@@ -160,13 +179,18 @@ export default function mtplxAutostart(pi: ExtensionAPI): void {
 			const server = autoStart
 				? await acquire(ctx.model.id)
 				: await validateServer(ctx.model.id);
+			const fanSync = server.alreadyRunning ? syncFanModeFromRunningServer(server.fanMode) : undefined;
 			ctx.ui.setStatus("mtplx", `MTPLX: ${server.model}`);
 			if (server.alreadyRunning) {
 				const message = autoStart
 					? `MTPLX is already running at ${server.endpoint.baseUrl}, serving ${JSON.stringify(server.model)}. Auto Start will not start MTPLX. The model selected in Pi matches; proceeding.`
 					: `MTPLX is available at ${server.endpoint.baseUrl}, serving ${JSON.stringify(server.model)}. It matches Pi's selected model; Auto Start is off, so Pi will proceed without managing the server.`;
-				if (message !== lastServerNotice) ctx.ui.notify(message, "info");
-				lastServerNotice = message;
+				const fanMessage = fanSync
+					? ` Its fan curve is ${fanSync.current}, while Pi's saved default was ${fanSync.previous}; Pi left the server unchanged and updated its saved default to ${fanSync.current}.`
+					: "";
+				const notice = message + fanMessage;
+				if (notice !== lastServerNotice) ctx.ui.notify(notice, "info");
+				lastServerNotice = notice;
 			} else {
 				lastServerNotice = undefined;
 			}

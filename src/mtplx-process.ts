@@ -127,6 +127,7 @@ function autoStartDisabledUnavailableError(endpoint: MtplxEndpoint): Error {
 export type ReadyServer = {
 	endpoint: MtplxEndpoint;
 	model: string;
+	fanMode?: string;
 	alreadyRunning: boolean;
 };
 
@@ -197,7 +198,7 @@ export async function validateServer(modelId: string, endpoint = loadMtplxEndpoi
 	const probe = await healthProbe(endpoint);
 	const current = probe.health;
 	if (current?.model === modelId) {
-		return { endpoint, model: current.model, alreadyRunning: true };
+		return { endpoint, model: current.model, fanMode: current.fan_mode, alreadyRunning: true };
 	}
 	if (current) {
 		throw modelMismatchError(current.model, modelId, endpoint);
@@ -216,8 +217,7 @@ export async function ensureServer(modelId: string, endpoint = loadMtplxEndpoint
 	const current = probe.health;
 	if (current) {
 		if (current.model !== modelId) throw modelMismatchError(current.model, modelId, endpoint);
-		if (current.fan_mode !== getFanMode()) await setFanMode();
-		return { endpoint, model: current.model, alreadyRunning: true };
+		return { endpoint, model: current.model, fanMode: current.fan_mode, alreadyRunning: true };
 	}
 	if (await portIsOccupied(endpoint)) {
 		if (probe.authenticationRejected) throw new Error(authenticationFailureMessage());
@@ -228,7 +228,7 @@ export async function ensureServer(modelId: string, endpoint = loadMtplxEndpoint
 	}
 	await startServer(modelId);
 	await setFanMode();
-	return { endpoint, model: modelId, alreadyRunning: false };
+	return { endpoint, model: modelId, fanMode: getFanMode(), alreadyRunning: false };
 }
 
 let transition: Promise<ReadyServer> | undefined;

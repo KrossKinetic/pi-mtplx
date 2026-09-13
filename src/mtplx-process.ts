@@ -110,12 +110,25 @@ export async function stopServer(): Promise<boolean> {
 	throw new Error(`MTPLX shutdown timed out; ${endpoint.host}:${endpoint.port} is still occupied.`);
 }
 
-function unmanagedServerModelError(runningModel: string, requestedModel: string, endpoint: MtplxEndpoint): Error {
+function modelMismatchError(runningModel: string, requestedModel: string, endpoint: MtplxEndpoint): Error {
 	return new Error(
-		`MTPLX is already running on ${endpoint.host}:${endpoint.port} with model ${JSON.stringify(runningModel)}, but Pi requested ${JSON.stringify(requestedModel)}. ` +
-		`Pi will not replace this server because it is not managed by pi-mtplx. Stop it from the MTPLX app, or identify its listener with \`lsof -nP -iTCP:${endpoint.port} -sTCP:LISTEN\` and run \`kill -TERM <PID>\`; then retry so Pi can start and manage the requested model.`,
+		`MTPLX is already running at ${endpoint.baseUrl}, serving ${JSON.stringify(runningModel)}, but Pi has ${JSON.stringify(requestedModel)} selected. ` +
+		`Pi will not replace the running server. Select ${JSON.stringify(runningModel)} in Pi, or restart MTPLX with \`--model-id ${requestedModel}\`, then try again.`,
 	);
 }
+
+function autoStartDisabledUnavailableError(endpoint: MtplxEndpoint): Error {
+	return new Error(
+		`MTPLX is unavailable at ${endpoint.baseUrl}. Auto Start is off, so Pi will not start a server. ` +
+		"Start MTPLX at this endpoint or enable Auto Start, then try again.",
+	);
+}
+
+export type ReadyServer = {
+	endpoint: MtplxEndpoint;
+	model: string;
+	alreadyRunning: boolean;
+};
 
 /**
  * Spawn the MTPLX server for a registered model and wait until /health
@@ -177,24 +190,38 @@ export async function startServer(modelId: string): Promise<void> {
 }
 
 /**
- * Ensure the server on HOST:PORT serves `modelId`, transparently switching
- * models: stop the current (identified) server, then start the requested one.
+ * Confirm that the configured endpoint is healthy and serves `modelId`.
+ * Unlike `ensureServer`, this never starts, stops, or switches a server.
  */
-export async function ensureServer(modelId: string): Promise<void> {
+export async function validateServer(modelId: string): Promise<ReadyServer> {
 	const endpoint = loadMtplxEndpoint();
 	const probe = await healthProbe();
 	const current = probe.health;
 	if (current?.model === modelId) {
-		if (current.fan_mode !== getFanMode()) await setFanMode();
-		return;
+		return { endpoint, model: current.model, alreadyRunning: true };
 	}
 	if (current) {
-		if (!isOwnedByThisSession()) {
-			throw unmanagedServerModelError(current.model, modelId, endpoint);
-		}
-		await stopServer();
+		throw modelMismatchError(current.model, modelId, endpoint);
 	}
-	else if (await portIsOccupied(endpoint)) {
+	if (probe.authenticationRejected) throw new Error(authenticationFailureMessage());
+	throw autoStartDisabledUnavailableError(endpoint);
+}
+
+/**
+ * Ensure the configured endpoint serves `modelId`. A healthy MTPLX server is
+ * always authoritative: Pi reuses a matching one and never replaces a
+ * different model. Pi starts a server only when the endpoint is unavailable.
+ */
+export async function ensureServer(modelId: string): Promise<ReadyServer> {
+	const endpoint = loadMtplxEndpoint();
+	const probe = await healthProbe();
+	const current = probe.health;
+	if (current) {
+		if (current.model !== modelId) throw modelMismatchError(current.model, modelId, endpoint);
+		if (current.fan_mode !== getFanMode()) await setFanMode();
+		return { endpoint, model: current.model, alreadyRunning: true };
+	}
+	if (await portIsOccupied(endpoint)) {
 		if (probe.authenticationRejected) throw new Error(authenticationFailureMessage());
 		throw new Error(`MTPLX cannot start because ${endpoint.host}:${endpoint.port} is occupied by a non-MTPLX service.`);
 	}
@@ -203,15 +230,16 @@ export async function ensureServer(modelId: string): Promise<void> {
 	}
 	await startServer(modelId);
 	await setFanMode();
+	return { endpoint, model: modelId, alreadyRunning: false };
 }
 
-let transition: Promise<void> | undefined;
+let transition: Promise<ReadyServer> | undefined;
 let transitionModel: string | undefined;
 let activeModel: string | undefined;
 let activeAgents = 0;
 let idleWaiters: Array<() => void> = [];
 
-export function ensureOnce(modelId: string): Promise<void> {
+export function ensureOnce(modelId: string): Promise<ReadyServer> {
 	if (transition) {
 		if (transitionModel === modelId) return transition;
 		return transition.then(() => ensureOnce(modelId));
@@ -224,7 +252,7 @@ export function ensureOnce(modelId: string): Promise<void> {
 	return transition;
 }
 
-export async function acquire(modelId: string): Promise<void> {
+export async function acquire(modelId: string): Promise<ReadyServer> {
 	// Never replace a model while an already-admitted MTPLX agent is running.
 	// Same-model requests share both this lease and any in-flight start Promise.
 	while (activeAgents > 0 && activeModel !== modelId) {
@@ -236,7 +264,7 @@ export async function acquire(modelId: string): Promise<void> {
 	activeModel = modelId;
 	activeAgents += 1;
 	try {
-		await ensureOnce(modelId);
+		return await ensureOnce(modelId);
 	} catch (error) {
 		release();
 		throw error;

@@ -6,13 +6,15 @@
  * and shared helpers (src/utils.ts) into Pi via before_agent_start,
  * agent_end and session_shutdown, plus the /mtplx command.
  */
-import { acquire, release, stopServer } from "../src/mtplx-process.ts";
+import { acquire, release, stopServer, validateServer } from "../src/mtplx-process.ts";
 import { authenticationFailureMessage, getFanMode, health, healthProbe, setFanMode, setFanModeValue } from "../src/mtplx-client.ts";
 import { MTPLX_PROVIDER, manageModels, removeModel, removePiMtplxProvider } from "../src/model-discovery.ts";
 import { FAN_MODES, isMtplxModel, loadAutoShutdown, loadAutoStart, loadMtplxApiKey, loadMtplxEndpoint, loadSsdSessionCache, maskMtplxApiKey, saveAutoShutdown, saveAutoStart, saveFanMode, saveMtplxApiKey, saveMtplxEndpoint, saveSsdSessionCache, syncMtplxStoredCredential, type FanMode } from "../src/utils.ts";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export default function mtplxAutostart(pi: ExtensionAPI): void {
+	let lastServerNotice: string | undefined;
+
 	// Pi's runtime may already have loaded auth.json for this process, but
 	// syncing here ensures its next launch uses the same key as models.json.
 	syncMtplxStoredCredential();
@@ -153,10 +155,23 @@ export default function mtplxAutostart(pi: ExtensionAPI): void {
 
 	pi.on("before_agent_start", async (_event, ctx) => {
 		if (!ctx.model || !isMtplxModel(ctx.model)) return;
-		if (!loadAutoStart()) return;
+		const autoStart = loadAutoStart();
 		try {
-			await acquire(ctx.model.id);
+			const server = autoStart
+				? await acquire(ctx.model.id)
+				: await validateServer(ctx.model.id);
+			ctx.ui.setStatus("mtplx", `MTPLX: ${server.model}`);
+			if (server.alreadyRunning) {
+				const message = autoStart
+					? `MTPLX is already running at ${server.endpoint.baseUrl}, serving ${JSON.stringify(server.model)}. Auto Start will not start MTPLX. The model selected in Pi matches; proceeding.`
+					: `MTPLX is available at ${server.endpoint.baseUrl}, serving ${JSON.stringify(server.model)}. It matches Pi's selected model; Auto Start is off, so Pi will proceed without managing the server.`;
+				if (message !== lastServerNotice) ctx.ui.notify(message, "info");
+				lastServerNotice = message;
+			} else {
+				lastServerNotice = undefined;
+			}
 		} catch (error) {
+			lastServerNotice = undefined;
 			throw new Error(`MTPLX request blocked: ${error instanceof Error ? error.message : String(error)}`);
 		}
 	});

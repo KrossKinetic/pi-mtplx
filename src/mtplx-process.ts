@@ -17,6 +17,7 @@ import { spawn, execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { ChildProcess } from "node:child_process";
 import { authenticationFailureMessage, getFanMode, health, healthProbe, setFanMode } from "./mtplx-client.ts";
+import { MTPLX_MODELS } from "./model-discovery.ts";
 import { READY_TIMEOUT_MS, POLL_MS, loadMtplxEndpoint, loadResolvedMtplxApiKey, loadSsdSessionCache, sleep, commandError, portIsOccupied, type MtplxEndpoint } from "./utils.ts";
 
 const execFileAsync = promisify(execFile);
@@ -126,22 +127,6 @@ export async function startServer(modelId: string): Promise<void> {
 	const configured = MTPLX_MODELS[modelId];
 	if (!configured) {
 		throw new Error(`MTPLX model ${JSON.stringify(modelId)} is not mapped to an installed MTPLX artifact. Update the pi-mtplx model registry after adding it to Pi.`);
-	}
-
-	// Check if a server is already running and serving this model
-	const current = await health();
-	if (current?.model === modelId) {
-		if (current.fan_mode !== getFanMode()) await setFanMode();
-		return;
-	}
-	// If a server is running but with a different model, don't try to replace it
-	// This allows reusing an existing MTPLX instance when autostart is disabled
-	if (current) {
-		console.warn(
-			`MTPLX server on ${HOST}:${PORT} is running with model ${JSON.stringify(current.model)}, not ${JSON.stringify(modelId)}. ` +
-			`Cannot start a new server. Use /mtplx → Toggle to stop the running server first.`,
-		);
-		throw new Error(`MTPLX server is already running with a different model. Stop it via /mtplx → Toggle first.`);
 	}
 
 	const args = [

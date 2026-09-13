@@ -4,7 +4,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { displayNameFromId, isMtplxModel, maskMtplxApiKey, mtplxApiKeyFromCatalog, resolveMtplxApiKey, FAN_MODES, DEFAULT_AUTO_SHUTDOWN, DEFAULT_MTPLX_API_KEY, DEFAULT_SSD_SESSION_CACHE } from "../src/utils.ts";
+import { displayNameFromId, isMtplxModel, maskMtplxApiKey, mtplxApiKeyFromCatalog, mtplxEndpointFromBaseUrl, resolveMtplxApiKey, FAN_MODES, DEFAULT_AUTO_SHUTDOWN, DEFAULT_AUTO_START, DEFAULT_MTPLX_API_KEY, DEFAULT_SSD_SESSION_CACHE } from "../src/utils.ts";
 import { servedModelIdFromDryRun } from "../src/model-discovery.ts";
 
 test("servedModelIdFromDryRun uses MTPLX's canonical model id", () => {
@@ -33,6 +33,27 @@ test("SSD session cache defaults to on", () => {
 
 test("auto-shutdown defaults to on", () => {
 	assert.equal(DEFAULT_AUTO_SHUTDOWN, true);
+});
+
+test("auto-start defaults to on", () => {
+	assert.equal(DEFAULT_AUTO_START, true);
+});
+
+test("mtplxEndpointFromBaseUrl normalizes local and remote endpoints", () => {
+	assert.deepEqual(mtplxEndpointFromBaseUrl("http://127.0.0.1:8001/v1/"), {
+		baseUrl: "http://127.0.0.1:8001/v1",
+		origin: "http://127.0.0.1:8001",
+		host: "127.0.0.1",
+		port: 8001,
+		isLoopback: true,
+	});
+	assert.deepEqual(mtplxEndpointFromBaseUrl("https://mtplx.example/v1"), {
+		baseUrl: "https://mtplx.example/v1",
+		origin: "https://mtplx.example",
+		host: "mtplx.example",
+		port: 443,
+		isLoopback: false,
+	});
 });
 
 test("mtplxApiKeyFromCatalog reads the provider-level key", () => {

@@ -20,7 +20,7 @@ import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { displayNameFromId } from "./utils.ts";
+import { commandError, displayNameFromId } from "./utils.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -114,7 +114,11 @@ export async function listMtplxModels(): Promise<MtplxListedModel[]> {
 }
 
 export function listedIdentity(model: MtplxListedModel): string {
-	return typeof model.repo_id === "string" && model.repo_id ? model.repo_id : typeof model.path === "string" ? model.path : "";
+	const repo = typeof model.repo_id === "string" ? model.repo_id : "";
+	// Forge artifacts have a bare directory name in repo_id. Quickstart treats
+	// that as a path relative to Pi's cwd, so use the installed path instead.
+	if (repo.includes("/")) return repo;
+	return typeof model.path === "string" && model.path ? model.path : repo;
 }
 
 /**
@@ -125,10 +129,41 @@ export function listedIdentity(model: MtplxListedModel): string {
 export async function servedModelId(ref: string): Promise<string> {
 	const cached = servedIdCache.get(ref);
 	if (cached) return cached;
-	const { stdout } = await execFileAsync("mtplx", ["quickstart", "--model", ref, "--dry-run", "--json"], { timeout: 30_000 });
-	const id = servedModelIdFromDryRun(JSON.parse(stdout) as unknown);
-	servedIdCache.set(ref, id);
-	return id;
+	try {
+		const { stdout } = await execFileAsync("mtplx", ["quickstart", "--model", ref, "--dry-run", "--json"], { timeout: 30_000 });
+		const id = servedModelIdFromDryRun(JSON.parse(stdout) as unknown);
+		servedIdCache.set(ref, id);
+		return id;
+	} catch (error) {
+		// MTPLX reports CLI errors as JSON on stdout, which execFile's default
+		// error.message omits. Keep that diagnostic visible in the Models menu.
+		const stdout = (error as { stdout?: string } | null)?.stdout;
+		let detail: unknown;
+		try {
+			const payload = JSON.parse(stdout ?? "") as { detail?: unknown; error?: unknown };
+			detail = payload.detail || payload.error;
+		} catch { /* Fall back to stderr / process error below. */ }
+		throw new Error(typeof detail === "string" ? detail : commandError(error), { cause: error });
+	}
+}
+
+/** A broken or unfinished artifact must not block management of other models. */
+export async function resolveInstalledModels(
+	installed: readonly MtplxListedModel[],
+	resolveId: (ref: string) => Promise<string> = servedModelId,
+): Promise<{ resolved: ResolvedMtplxModel[]; failures: string[] }> {
+	const resolved: ResolvedMtplxModel[] = [];
+	const failures: string[] = [];
+	for (const model of installed) {
+		const ref = listedIdentity(model);
+		if (!ref) continue;
+		try {
+			resolved.push({ model, ref, id: await resolveId(ref) });
+		} catch (error) {
+			failures.push(`${ref}: ${error instanceof Error ? error.message : String(error)}`);
+		}
+	}
+	return { resolved, failures };
 }
 
 /** Parse the model id from MTPLX's machine-readable quickstart plan. */
@@ -281,17 +316,11 @@ export async function manageModels(ctx: ExtensionContext): Promise<boolean> {
 		ctx.ui.notify("No MTPLX models found. Install one with `mtplx install`.", "warning");
 		return false;
 	}
-	let resolved: ResolvedMtplxModel[];
-	try {
-		resolved = [];
-		for (const model of installed) {
-			const ref = listedIdentity(model);
-			if (ref) resolved.push({ model, ref, id: await servedModelId(ref) });
-		}
-	} catch (error) {
-		ctx.ui.notify(`Could not read MTPLX's served model id: ${error instanceof Error ? error.message : String(error)}`, "error");
-		return false;
+	const { resolved, failures } = await resolveInstalledModels(installed);
+	if (failures.length > 0) {
+		ctx.ui.notify(`Skipped ${failures.length} MTPLX model(s) whose served ID could not be read:\n${failures.join("\n")}`, "warning");
 	}
+	if (resolved.length === 0) return false;
 	const migrated = migrateRegisteredModelIds(resolved);
 	if (migrated.length > 0) {
 		ctx.ui.notify(`Updated registered model IDs to MTPLX's canonical names. Restart Pi before selecting them.`, "info");

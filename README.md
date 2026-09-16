@@ -63,6 +63,8 @@ Models are registered in `~/.pi/agent/mtplx-models.json`. Each entry maps MTPLX'
 
 Register new models via the `/mtplx` → **Models** menu; it asks MTPLX for the exact served ID. Opening this menu also migrates older ref-derived IDs to their canonical MTPLX names. Restart Pi after a migration or registration, then open `/model` (or `/scoped-models`) to activate the model.
 
+Local Forge outputs use their installed paths as artifact refs; downloaded repositories retain their `owner/model` refs. If an artifact cannot produce a serving plan, the menu shows MTPLX's error and skips that artifact while keeping the other models available.
+
 ### Fan mode
 
 Controls the thermal profile used when Pi starts an MTPLX server. Saved to `~/.pi/agent/mtplx-fanmode.json` and persists across restarts. When Pi discovers a server that is already running—whether it is local, remote, or Pi-owned—it does not automatically change the fan curve; if the server reports a supported curve that differs from Pi's saved default, Pi adopts that curve as its new default for future Pi-started servers. Choosing `/mtplx` → **Fan Curves** is an explicit override and changes the fan curve of the active healthy server.

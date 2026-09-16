@@ -17,7 +17,48 @@ export type FanMode = "default" | "smart" | "max";
 export const FAN_MODES: readonly FanMode[] = ["default", "smart", "max"];
 export const DEFAULT_SSD_SESSION_CACHE = true;
 export const DEFAULT_AUTO_SHUTDOWN = true;
+export const DEFAULT_AUTO_START = true;
 export const DEFAULT_MTPLX_API_KEY = "mtplx-local";
+
+export type MtplxEndpoint = {
+	baseUrl: string;
+	origin: string;
+	host: string;
+	port: number;
+	isLoopback: boolean;
+};
+
+/** Resolve the endpoint from Pi's provider configuration, with a local default. */
+export function mtplxEndpointFromBaseUrl(baseUrl: unknown): MtplxEndpoint {
+	const fallback = `http://${HOST}:${PORT}/v1`;
+	let url: URL;
+	try {
+		url = new URL(typeof baseUrl === "string" && baseUrl.trim() ? baseUrl.trim() : fallback);
+		if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("unsupported protocol");
+	} catch {
+		url = new URL(fallback);
+	}
+	// URL.hostname retains brackets around IPv6 literals ("[::1]"). The
+	// MTPLX CLI and node:net both expect the bare address, and ::1 is local.
+	const host = url.hostname.replace(/^\[|\]$/g, "");
+	const port = Number(url.port || (url.protocol === "https:" ? 443 : 80));
+	return {
+		baseUrl: url.toString().replace(/\/$/, ""),
+		origin: url.origin,
+		host,
+		port,
+		isLoopback: host === "127.0.0.1" || host === "::1" || host.toLowerCase() === "localhost",
+	};
+}
+
+export function loadMtplxEndpoint(): MtplxEndpoint {
+	try {
+		const catalog = JSON.parse(readFileSync(PI_MODELS_FILE, "utf8")) as { providers?: { mtplx?: { baseUrl?: unknown } } };
+		return mtplxEndpointFromBaseUrl(catalog.providers?.mtplx?.baseUrl);
+	} catch {
+		return mtplxEndpointFromBaseUrl(undefined);
+	}
+}
 
 // Fan mode ("fan curve") applied at autostart, live-updated from `/mtplx` while the
 // server runs. Persisted to disk so the choice survives Pi restarts: `fanMode` is a
@@ -74,6 +115,26 @@ export function saveSsdSessionCache(enabled: boolean): void {
 // separate from the server's own settings so users can deliberately leave a
 // loaded model available after Pi exits.
 export const AUTO_SHUTDOWN_FILE = join(homedir(), ".pi", "agent", "mtplx-auto-shutdown.json");
+export const AUTO_START_FILE = join(homedir(), ".pi", "agent", "mtplx-auto-start.json");
+
+export function loadAutoStart(): boolean {
+	try {
+		const parsed = JSON.parse(readFileSync(AUTO_START_FILE, "utf8")) as { enabled?: unknown };
+		if (typeof parsed.enabled === "boolean") return parsed.enabled;
+	} catch {
+		// missing or corrupt file → fall back to the default
+	}
+	return DEFAULT_AUTO_START;
+}
+
+export function saveAutoStart(enabled: boolean): void {
+	try {
+		mkdirSync(join(homedir(), ".pi", "agent"), { recursive: true });
+		writeFileSync(AUTO_START_FILE, JSON.stringify({ enabled }, null, 2) + "\n");
+	} catch (error) {
+		console.error(`MTPLX could not persist auto-start preference: ${error instanceof Error ? error.message : String(error)}`);
+	}
+}
 
 export function loadAutoShutdown(): boolean {
 	try {
@@ -203,6 +264,37 @@ export function saveMtplxApiKey(apiKey: string): boolean {
 	}
 }
 
+/** Save the OpenAI-compatible base URL used by Pi and lifecycle health checks. */
+export function saveMtplxEndpoint(baseUrl: string): boolean {
+	const normalized = baseUrl.trim();
+	if (!normalized) return false;
+	let endpoint: MtplxEndpoint;
+	try {
+		const url = new URL(normalized);
+		if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+		endpoint = mtplxEndpointFromBaseUrl(normalized);
+	} catch {
+		return false;
+	}
+	try {
+		const catalog = existsSync(PI_MODELS_FILE)
+			? JSON.parse(readFileSync(PI_MODELS_FILE, "utf8")) as Record<string, unknown>
+			: {};
+		if (typeof catalog !== "object" || catalog === null || Array.isArray(catalog)) throw new Error("models.json is not an object");
+		const providers = (catalog.providers ??= {}) as Record<string, unknown>;
+		const provider = (providers.mtplx ?? { api: "openai-completions", authHeader: true }) as Record<string, unknown>;
+		if (typeof provider !== "object" || provider === null || Array.isArray(provider)) throw new Error("models.json mtplx provider is not an object");
+		provider.baseUrl = endpoint.baseUrl;
+		providers.mtplx = provider;
+		mkdirSync(join(homedir(), ".pi", "agent"), { recursive: true });
+		writeFileSync(PI_MODELS_FILE, JSON.stringify(catalog, null, 2) + "\n");
+		return true;
+	} catch (error) {
+		console.error(`MTPLX could not update endpoint: ${error instanceof Error ? error.message : String(error)}`);
+		return false;
+	}
+}
+
 export function displayNameFromId(id: string): string {
 	return id
 		.replace(/^mtplx-/, "")
@@ -227,9 +319,9 @@ export function commandError(error: unknown): string {
 	return stderr || details.message || "unknown command failure";
 }
 
-export function portIsOccupied(): Promise<boolean> {
+export function portIsOccupied(endpoint = loadMtplxEndpoint()): Promise<boolean> {
 	return new Promise((resolve) => {
-		const socket = createConnection({ host: HOST, port: PORT });
+		const socket = createConnection({ host: endpoint.host, port: endpoint.port });
 		const done = (occupied: boolean) => {
 			socket.destroy();
 			resolve(occupied);

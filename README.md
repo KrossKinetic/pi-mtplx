@@ -93,6 +93,14 @@ Auto Start is on by default. Pi first checks the selected endpoint before starti
 
 Auto shutdown is on by default. When enabled, pi-mtplx stops an MTPLX server it launched during the current Pi session when Pi exits via `/quit` or a normal terminal-close shutdown. It never stops a separately managed or remote server. Turn it off in `/mtplx` → **Auto Shutdown Pi-Owned Server** to leave the Pi-launched server running after Pi exits. It cannot handle abrupt termination such as `SIGKILL` or a power loss.
 
+## Remote endpoints
+
+I do not have a remote server, so I was unable to personally test how pi-mtplx interacts with remote endpoints.
+
+## Reporting bugs
+
+If you encounter a bug, please open a [GitHub Issue](../../issues) and let me know.
+
 ## Troubleshooting
 
 | Problem | Fix |
